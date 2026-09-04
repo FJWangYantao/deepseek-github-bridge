@@ -1,7 +1,7 @@
 import { DEFAULT_CONTEXT_LIMITS } from "../shared/constants";
-import type { DiffFile, FileContent, RepositoryDiff, RepositoryTree } from "../shared/types";
+import type { DiffFile, FileContent, RepositoryCommit, RepositoryDiff, RepositoryTree } from "../shared/types";
 
-export type ContextItemType = "file" | "tree" | "diff";
+export type ContextItemType = "file" | "tree" | "diff" | "commit";
 
 export interface ContextSource {
   repo: string;
@@ -42,7 +42,24 @@ export interface ContextDiff {
   files: DiffFile[];
 }
 
-export type ContextItem = ContextFile | ContextTree | ContextDiff;
+export interface ContextCommit {
+  type: "commit";
+  source: ContextSource;
+  repo: string;
+  ref: string;
+  sha: string;
+  shortSha: string;
+  message: string;
+  author?: string;
+  date?: string;
+  parents: string[];
+  files: DiffFile[];
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+}
+
+export type ContextItem = ContextFile | ContextTree | ContextDiff | ContextCommit;
 
 export interface ContextLimits {
   maxFiles: number;
@@ -102,7 +119,9 @@ function renderContext(items: ContextItem[]): string {
     "",
   ];
 
+  const commits = items.filter((item): item is ContextCommit => item.type === "commit");
   const sections = [
+    ...commits.map(renderCommit),
     ...diffs.map(renderDiff),
     ...trees.map(renderTree),
     ...files.map(renderFile),
@@ -159,6 +178,43 @@ function renderDiff(diff: ContextDiff): string {
   ].join("\n");
 }
 
+function renderCommit(commit: ContextCommit): string {
+  const changedFiles = commit.files
+    .map((file) => `- ${file.status} ${file.previousPath ? `${file.previousPath} → ` : ""}${file.path}`)
+    .join("\n");
+  const patch = commit.files
+    .map((file) => file.patch !== undefined
+      ? `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n${file.patch}`
+      : `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n# Patch omitted by GitHub (${file.status}; +${file.additions} -${file.deletions})`)
+    .join("\n");
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(patch) + 1));
+  return [
+    "Context item: Git commit",
+    `Repository: \`${commit.repo}\``,
+    `Commit: \`${commit.sha}\``,
+    ...(commit.author ? [`Author: ${commit.author}`] : []),
+    ...(commit.date ? [`Date: ${commit.date}`] : []),
+    "",
+    "Message:",
+    commit.message,
+    "",
+    "Parents:",
+    commit.parents.length > 0 ? commit.parents.map((parent) => `- ${parent}`).join("\n") : "- (none)",
+    "",
+    `Files changed: ${commit.changedFiles}`,
+    `Additions: ${commit.additions}`,
+    `Deletions: ${commit.deletions}`,
+    "",
+    "Changed files:",
+    changedFiles || "- (none)",
+    "",
+    "Diff:",
+    `${fence}diff`,
+    patch || "# No patch returned by GitHub.",
+    fence,
+  ].join("\n");
+}
+
 function renderTree(tree: ContextTree): string {
   const lines = tree.entries
     .slice()
@@ -207,6 +263,26 @@ export function contextTreeFromGitHub(tree: RepositoryTree): ContextTree {
   };
 }
 
+export function contextCommitFromGitHub(commit: RepositoryCommit): ContextCommit {
+  const author = commit.author ?? commit.committer;
+  return {
+    type: "commit",
+    source: { repo: `${commit.repo.owner}/${commit.repo.name}`, ref: commit.sha },
+    repo: `${commit.repo.owner}/${commit.repo.name}`,
+    ref: commit.sha,
+    sha: commit.sha,
+    shortSha: commit.shortSha,
+    message: commit.message,
+    ...(author?.name === undefined ? {} : { author: author.name }),
+    ...(author?.date === undefined ? {} : { date: author.date }),
+    parents: commit.parents,
+    files: commit.files,
+    additions: commit.additions,
+    deletions: commit.deletions,
+    changedFiles: commit.changedFiles,
+  };
+}
+
 export function contextDiffFromGitHub(diff: RepositoryDiff): ContextDiff {
   return {
     type: "diff",
@@ -233,8 +309,16 @@ export function getContextStats(
   const warnings: string[] = [];
   const files = items.filter((item): item is ContextFile => item.type === "file");
   const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
+  const commits = items.filter((item): item is ContextCommit => item.type === "commit");
   const totalCharacters = files.reduce((total, file) => total + file.content.length, 0) +
-    diffs.reduce((total, diff) => total + diff.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0);
+    diffs.reduce((total, diff) => total + diff.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0) +
+    commits.reduce((total, commit) => total + commit.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0);
+  for (const commit of commits) {
+    const commitCharacters = commit.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+    if (commitCharacters > (limits.warnDiffCharacters ?? 40_000)) {
+      warnings.push(`Commit ${commit.sha.slice(0, 7)} Diff 较大（${commitCharacters.toLocaleString()} 字符）。`);
+    }
+  }
   for (const diff of diffs) {
     const diffCharacters = diff.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
     const warnDiffCharacters = limits.warnDiffCharacters ?? 40_000;
@@ -270,6 +354,7 @@ export function validateContextItems(
 ): void {
   const files = items.filter((item): item is ContextFile => item.type === "file");
   const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
+  const commits = items.filter((item): item is ContextCommit => item.type === "commit");
   if (items.length === 0) {
     throw new ContextBuildError("NO_FILES", "请至少选择一个上下文项。 ");
   }
@@ -290,6 +375,16 @@ export function validateContextItems(
   const maxDiffFiles = limits.maxDiffFiles ?? 50;
   const maxDiffCharacters = limits.maxDiffCharacters ?? 100_000;
   let totalCharacters = 0;
+  for (const commit of commits) {
+    const commitCharacters = commit.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+    if (commit.files.length > maxDiffFiles) {
+      throw new ContextBuildError("TOO_MANY_FILES", `Commit 包含 ${commit.files.length} 个文件，超过 Diff 上限 ${maxDiffFiles} 个。`);
+    }
+    if (commitCharacters > maxDiffCharacters) {
+      throw new ContextBuildError("TOTAL_TOO_LARGE", `Commit Diff 约 ${commitCharacters.toLocaleString()} 字符，超过限制 ${maxDiffCharacters.toLocaleString()}。`);
+    }
+    totalCharacters += commitCharacters;
+  }
   for (const diff of diffs) {
     const diffCharacters = diff.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
     if (diff.files.length > maxDiffFiles) {

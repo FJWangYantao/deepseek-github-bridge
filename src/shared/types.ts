@@ -79,6 +79,31 @@ export interface CompareRefsInput {
   head: string;
 }
 
+export interface CommitAuthor {
+  name: string;
+  email?: string;
+  date: string;
+}
+
+export interface GetCommitInput {
+  repo: RepoRef;
+  sha: string;
+}
+
+export interface RepositoryCommit {
+  repo: RepoRef;
+  sha: string;
+  shortSha: string;
+  message: string;
+  author: CommitAuthor | null;
+  committer: CommitAuthor | null;
+  parents: string[];
+  files: DiffFile[];
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+}
+
 export interface RepositoryDiff {
   repo: RepoRef;
   base: string;
@@ -161,6 +186,7 @@ export interface MessagePayloadMap {
   "github:listBranches": { repo: RepoRef };
   "github:getTree": GetTreeInput;
   "github:compareRefs": CompareRefsInput;
+  "github:getCommit": GetCommitInput;
   "github:searchCode": SearchCodeInput;
   "github:listDirectory": ListDirectoryInput;
   "github:readFile": ReadFileInput;
@@ -176,6 +202,7 @@ export interface MessageResponseMap {
   "github:listBranches": Branch[];
   "github:getTree": RepositoryTree;
   "github:compareRefs": RepositoryDiff;
+  "github:getCommit": RepositoryCommit;
   "github:searchCode": CodeSearchResult[];
   "github:listDirectory": TreeEntry[];
   "github:readFile": FileContent;

@@ -102,6 +102,42 @@ describe("GitHubClient", () => {
     });
   });
 
+  it("maps commit metadata, merge parents, and missing patches", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/repos/octo/demo/commits/abc123");
+      return response({
+        sha: "abc1234567890",
+        commit: {
+          message: "fix: race condition\n\nDetails",
+          author: { name: "Octo", email: "octo@example.com", date: "2026-01-01T00:00:00Z" },
+          committer: { name: "Octo", date: "2026-01-01T00:00:00Z" },
+        },
+        parents: [{ sha: "parent-1" }, { sha: "parent-2" }],
+        stats: { additions: 5, deletions: 2, total: 2 },
+        files: [
+          { filename: "src/app.ts", status: "modified", additions: 5, deletions: 2, changes: 7, patch: "@@" },
+          { filename: "assets/app.js", status: "modified", additions: 0, deletions: 0, changes: 0 },
+        ],
+      });
+    });
+    const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
+
+    await expect(client.getCommit({ repo: { owner: "octo", name: "demo" }, sha: "abc123" })).resolves.toMatchObject({
+      sha: "abc1234567890",
+      shortSha: "abc1234",
+      message: "fix: race condition\n\nDetails",
+      parents: ["parent-1", "parent-2"],
+      additions: 5,
+      deletions: 2,
+      changedFiles: 2,
+      files: [
+        expect.objectContaining({ path: "src/app.ts", patch: "@@" }),
+        expect.objectContaining({ path: "assets/app.js" }),
+      ],
+    });
+    await expect(client.getCommit({ repo: { owner: "octo", name: "demo" }, sha: " " })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
   it("maps branch comparison results and preserves omitted patches", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       expect(String(input)).toContain("/repos/octo/demo/compare/main...feature%2Ffoo");

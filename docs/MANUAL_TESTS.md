@@ -22,4 +22,8 @@
 | 16 | 取消部分 Diff 文件后点击“Add Diff to Context” | 只附加勾选的 Diff 文件，预览包含 Base、Head、patch 和变更清单 |
 | 17 | 选择包含二进制或超大文件的分支比较 | 无 patch 文件显示 `Patch omitted by GitHub`，不会因 patch 缺失崩溃 |
 | 18 | Diff 请求返回前切换仓库或分支 | 旧 Diff 不会显示，也不会进入当前上下文 |
+| 19 | 输入 Commit SHA 并点击“加载 Commit” | 显示提交摘要、作者、父提交、变更文件和增删统计 |
+| 20 | 取消部分 Commit 文件后点击“Add Commit to Context” | 只附加勾选文件，预览包含 message、metadata 和 Diff |
+| 21 | 加载 Merge Commit 或缺少 patch 的 Commit | 支持多个 parents，缺少 patch 时显示省略标记，不崩溃 |
+| 22 | Commit 请求返回前切换仓库 | 旧 Commit 不显示，也不会进入当前上下文 |
 

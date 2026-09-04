@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../github/errors";
 import {
   buildContext,
+  contextCommitFromGitHub,
   contextDiffFromGitHub,
   contextFileFromGitHub,
   contextTreeFromGitHub,
@@ -15,6 +16,7 @@ import type {
   AuthStatus,
   Branch,
   CodeSearchResult,
+  RepositoryCommit,
   RepositoryDiff,
   DeepSeekStatus,
   Repository,
@@ -44,6 +46,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CodeSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [commitSha, setCommitSha] = useState("");
+  const [repositoryCommit, setRepositoryCommit] = useState<RepositoryCommit | null>(null);
+  const [loadingCommit, setLoadingCommit] = useState(false);
+  const [selectedCommitPaths, setSelectedCommitPaths] = useState<Set<string>>(() => new Set());
   const [baseBranch, setBaseBranch] = useState("");
   const [headBranch, setHeadBranch] = useState("");
   const [repositoryDiff, setRepositoryDiff] = useState<RepositoryDiff | null>(null);
@@ -55,6 +61,7 @@ export default function App() {
   const treeRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
   const diffRequestRef = useRef(0);
+  const commitRequestRef = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -171,6 +178,7 @@ export default function App() {
     treeRequestRef.current += 1;
     searchRequestRef.current += 1;
     diffRequestRef.current += 1;
+    commitRequestRef.current += 1;
     setLoadingTree(false);
     setSearching(false);
     selectedItemsRef.current = [];
@@ -184,6 +192,9 @@ export default function App() {
     setHeadBranch("");
     setRepositoryDiff(null);
     setSelectedDiffPaths(new Set());
+    setCommitSha("");
+    setRepositoryCommit(null);
+    setSelectedCommitPaths(new Set());
     setPath("");
     setEntries([]);
   }, [repoKey, branchName]);
@@ -253,10 +264,14 @@ export default function App() {
       setHeadBranch("");
       setRepositoryDiff(null);
       setSelectedDiffPaths(new Set());
+      setCommitSha("");
+      setRepositoryCommit(null);
+      setSelectedCommitPaths(new Set());
       selectionVersionRef.current += 1;
       treeRequestRef.current += 1;
       searchRequestRef.current += 1;
       diffRequestRef.current += 1;
+      commitRequestRef.current += 1;
       setLoadingTree(false);
       setSearching(false);
       selectedItemsRef.current = [];
@@ -344,6 +359,56 @@ export default function App() {
     } finally {
       if (diffRequestRef.current === requestId) setLoadingDiff(false);
     }
+  }
+
+  async function loadCommit() {
+    if (!selectedRepository || !commitSha.trim()) return;
+    const selectionVersion = selectionVersionRef.current;
+    const commitRepository = selectedRepository;
+    const sha = commitSha.trim();
+    const requestId = ++commitRequestRef.current;
+    setLoadingCommit(true);
+    setError("");
+    try {
+      const commit = await requestBridge({
+        type: "github:getCommit",
+        payload: { repo: commitRepository, sha },
+      });
+      if (
+        selectionVersionRef.current !== selectionVersion ||
+        commitRequestRef.current !== requestId ||
+        selectedRepository?.fullName !== commitRepository.fullName
+      ) return;
+      setRepositoryCommit(commit);
+      setSelectedCommitPaths(new Set(commit.files.map((file) => file.path)));
+    } catch (loadError) {
+      if (selectionVersionRef.current === selectionVersion && commitRequestRef.current === requestId) setError(errorMessage(loadError));
+    } finally {
+      if (commitRequestRef.current === requestId) setLoadingCommit(false);
+    }
+  }
+
+  function toggleCommitPath(path: string) {
+    setSelectedCommitPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function addCommitToContext() {
+    if (!repositoryCommit) return;
+    const selectedFiles = repositoryCommit.files.filter((file) => selectedCommitPaths.has(file.path));
+    if (selectedFiles.length === 0) {
+      setError("请至少选择一个 Commit 文件。 ");
+      return;
+    }
+    const contextCommit = contextCommitFromGitHub({ ...repositoryCommit, files: selectedFiles });
+    const nextItems = appendSelectedItem(selectedItemsRef.current, contextCommit);
+    selectedItemsRef.current = nextItems;
+    setSelectedItems(nextItems);
+    setNotice(`已加入 ${selectedFiles.length} 个 Commit 文件。`);
   }
 
   function toggleDiffPath(path: string) {
@@ -653,6 +718,18 @@ export default function App() {
                       {loadingTree ? "读取目录树…" : repositoryTree ? "移除目录树" : "加入目录树"}
                     </button>
                   </div>
+                  <div className="diff-tools commit-tools">
+                    <div className="development-heading"><span>Commit Context</span><span className="context-chip">COMMIT</span></div>
+                    <div className="commit-input-row"><input className="text-input" value={commitSha} onChange={(event) => setCommitSha(event.target.value)} placeholder="Commit SHA" aria-label="Commit SHA" /><button className="secondary-button" type="button" onClick={() => void loadCommit()} disabled={loadingCommit || !commitSha.trim()}>{loadingCommit ? "…" : "加载 Commit"}</button></div>
+                    {repositoryCommit && (
+                      <div className="commit-results">
+                        <div className="commit-title"><strong>{repositoryCommit.shortSha}</strong><span>{repositoryCommit.message.split("\n")[0]}</span></div>
+                        <div className="diff-summary"><strong>{repositoryCommit.changedFiles} files</strong><span className="diff-additions">+{repositoryCommit.additions}</span><span className="diff-deletions">−{repositoryCommit.deletions}</span></div>
+                        <div className="diff-files">{repositoryCommit.files.map((file) => <label className="diff-file-row" key={`${file.status}:${file.path}`}><input type="checkbox" checked={selectedCommitPaths.has(file.path)} onChange={() => toggleCommitPath(file.path)} /><span className="diff-file-path">{file.path}</span><span className="diff-file-stat">+{file.additions} −{file.deletions}</span></label>)}</div>
+                        <button className="text-button diff-add-button" type="button" onClick={addCommitToContext} disabled={selectedCommitPaths.size === 0}>Add Commit to Context</button>
+                      </div>
+                    )}
+                  </div>
                   <div className="diff-tools">
                     <div className="development-heading"><span>Development Context</span><span className="context-chip">DIFF</span></div>
                     <div className="diff-branch-row">
@@ -762,6 +839,13 @@ export default function App() {
             ) : (
               <>
                 <div className="selected-list">
+                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "commit" }> => item.type === "commit").map((commit) => (
+                    <div className="selected-file selected-commit" key={`${commit.repo}:${commit.sha}`}>
+                      <span className="file-type">COMMIT</span>
+                      <span className="selected-file-name" title={`${commit.repo}/${commit.sha}`}>{commit.shortSha ?? commit.sha.slice(0, 7)} · {commit.message.split("\n")[0]}</span>
+                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== commit); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); }} aria-label="移除 Commit">×</button>
+                    </div>
+                  ))}
                   {selectedItems.filter((item): item is Extract<ContextItem, { type: "diff" }> => item.type === "diff").map((diff) => (
                     <div className="selected-file selected-diff" key={`${diff.repo}:${diff.base}:${diff.head}`}>
                       <span className="file-type">DIFF</span>

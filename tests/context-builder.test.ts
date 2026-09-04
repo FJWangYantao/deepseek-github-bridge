@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildContext,
   ContextBuildError,
+  contextCommitFromGitHub,
   contextDiffFromGitHub,
   contextTreeFromGitHub,
   getContextStats,
@@ -74,6 +75,28 @@ describe("buildContext", () => {
     expect(result).toContain("Base: `main`");
     expect(result).toContain("Files changed: 2");
     expect(result).toContain("Patch omitted by GitHub");
+    expect(result).toContain("```diff");
+  });
+
+  it("renders commit intent, metadata, parents, files, and diff", () => {
+    const result = buildContext([contextCommitFromGitHub({
+      repo: { owner: "octo", name: "demo" },
+      sha: "abc1234567890",
+      shortSha: "abc1234",
+      message: "fix: race condition",
+      author: { name: "Octo", date: "2026-01-01T00:00:00Z" },
+      committer: null,
+      parents: ["parent-1", "parent-2"],
+      additions: 5,
+      deletions: 2,
+      changedFiles: 1,
+      files: [{ path: "src/app.ts", status: "modified", additions: 5, deletions: 2, changes: 7, patch: "@@" }],
+    })]);
+    expect(result).toContain("Context item: Git commit");
+    expect(result).toContain("Commit: `abc1234567890`");
+    expect(result).toContain("fix: race condition");
+    expect(result).toContain("- parent-1");
+    expect(result).toContain("modified src/app.ts");
     expect(result).toContain("```diff");
   });
 

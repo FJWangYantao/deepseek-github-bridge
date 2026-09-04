@@ -1,17 +1,20 @@
 import { GITHUB_API_BASE, GITHUB_API_VERSION } from "../shared/constants";
 import type {
   Branch,
+  CommitAuthor,
   CompareRefsInput,
   CodeSearchResult,
   DiffFile,
   DiffFileStatus,
   FileContent,
+  GetCommitInput,
   GetTreeInput,
   GitHubUser,
   ListDirectoryInput,
   ReadFileInput,
   RepoRef,
   Repository,
+  RepositoryCommit,
   RepositoryDiff,
   RepositoryTree,
   SearchCodeInput,
@@ -45,6 +48,26 @@ interface GitHubTreeResponse {
     sha: string;
     size?: number;
     url?: string;
+  }>;
+}
+
+interface GitHubCommitResponse {
+  sha: string;
+  commit: {
+    message: string;
+    author?: { name?: string; email?: string; date?: string } | null;
+    committer?: { name?: string; email?: string; date?: string } | null;
+  };
+  parents?: Array<{ sha: string }>;
+  stats?: { additions?: number; deletions?: number; total?: number };
+  files?: Array<{
+    filename: string;
+    previous_filename?: string;
+    status: string;
+    additions?: number;
+    deletions?: number;
+    changes?: number;
+    patch?: string;
   }>;
 }
 
@@ -173,6 +196,48 @@ export class GitHubClient {
           ...(entry.size === undefined ? {} : { size: entry.size }),
           ...(entry.url === undefined ? {} : { url: entry.url }),
         })),
+    };
+  }
+
+  async getCommit(input: GetCommitInput): Promise<RepositoryCommit> {
+    const sha = input.sha.trim();
+    if (!sha) {
+      throw new GitHubApiError("VALIDATION_FAILED", "请输入 Commit SHA。 ");
+    }
+    const owner = encodeSegment(input.repo.owner);
+    const name = encodeSegment(input.repo.name);
+    const data = await this.request<GitHubCommitResponse>(
+      `/repos/${owner}/${name}/commits/${encodeURIComponent(sha)}`,
+    );
+    if (
+      typeof data.sha !== "string" ||
+      !data.commit ||
+      typeof data.commit.message !== "string" ||
+      (data.files !== undefined && !Array.isArray(data.files))
+    ) {
+      throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的提交数据格式不正确。 ");
+    }
+    const files = (data.files ?? []).map((file) => ({
+      path: file.filename,
+      status: normalizeDiffStatus(file.status),
+      additions: file.additions ?? 0,
+      deletions: file.deletions ?? 0,
+      changes: file.changes ?? (file.additions ?? 0) + (file.deletions ?? 0),
+      ...(file.patch === undefined ? {} : { patch: file.patch }),
+      ...(file.previous_filename === undefined ? {} : { previousPath: file.previous_filename }),
+    }));
+    return {
+      repo: input.repo,
+      sha: data.sha,
+      shortSha: data.sha.slice(0, 7),
+      message: data.commit.message,
+      author: mapCommitAuthor(data.commit.author),
+      committer: mapCommitAuthor(data.commit.committer),
+      parents: (data.parents ?? []).map((parent) => parent.sha).filter(Boolean),
+      files,
+      additions: data.stats?.additions ?? files.reduce((total, file) => total + file.additions, 0),
+      deletions: data.stats?.deletions ?? files.reduce((total, file) => total + file.deletions, 0),
+      changedFiles: data.stats?.total ?? files.length,
     };
   }
 
@@ -384,6 +449,15 @@ function contentsEndpoint(repo: RepoRef, path: string, ref: string): string {
 
 function encodeSegment(value: string): string {
   return encodeURIComponent(value);
+}
+
+function mapCommitAuthor(author?: { name?: string; email?: string; date?: string } | null): CommitAuthor | null {
+  if (!author?.name || !author.date) return null;
+  return {
+    name: author.name,
+    ...(author.email === undefined ? {} : { email: author.email }),
+    date: author.date,
+  };
 }
 
 function normalizeDiffStatus(status: string): DiffFileStatus {

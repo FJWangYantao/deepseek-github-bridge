@@ -9,7 +9,7 @@
 - DeepSeek 内容脚本只负责页面识别和输入框 DOM 适配，支持 `textarea`、`contenteditable` 和 `role=textbox` 候选，并通过原生 setter 触发 React 输入事件。
 - 后台 Service Worker 负责类型化消息路由和所有 GitHub API 请求。
 - GitHub 客户端支持仓库、分支、目录和 UTF-8 文本文件读取，并统一处理鉴权、限流、无权限、网络和二进制文件错误。
-- 侧边栏支持仓库/分支选择、目录导航、多文件选择、仓库目录树、代码搜索、分支 Diff、文件大小与总上下文限制、Markdown 预览和手动附加。
+- 侧边栏支持仓库/分支选择、目录导航、多文件选择、仓库目录树、代码搜索、分支 Diff、Commit SHA 上下文、文件大小与总上下文限制、Markdown 预览和手动附加。
 - Token 只存在扩展的 `chrome.storage.local`，不会传入网页 JavaScript 或日志。
 
 ## 本地开发
@@ -61,6 +61,10 @@ npm run dev
 ## V0.3 · Branch Diff Context
 
 当前已加入只读的分支比较上下文：选择 `Base branch` 和 `Compare branch`，加载 GitHub Compare API 返回的变更文件，按文件勾选后点击 `Add Diff to Context`。Diff 预览包含比较元数据、变更文件清单、增删统计和 patch；GitHub 未返回 patch 的文件会明确标记为 `Patch omitted by GitHub`。整个流程不会写入 GitHub，也不会自动发送 DeepSeek 消息。
+
+## V0.3 · Commit Context
+
+选择仓库后，在 `Commit Context` 输入 Commit SHA，点击 `加载 Commit`，检查提交信息、作者、父提交、变更文件和 patch，再勾选文件并点击 `Add Commit to Context`。Commit Context 仍然是只读、人工确认的上下文，不会修改 GitHub 或自动发送 DeepSeek 消息。
 
 ## 手动验收重点
 

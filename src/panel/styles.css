@@ -177,7 +177,14 @@ h2 { margin-bottom: 4px; font-size: 15px; letter-spacing: -.015em; }
 .search-result-meta { flex: 0 0 auto; color: #8b98a6; font-size: 9px; }
 .selected-tree { background: #eef5fc; }
 .selected-diff { background: #f1f7ef; }
+.selected-commit { background: #f6f1fc; }
 .diff-tools { display: grid; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #edf0f3; }
+.commit-input-row { display: flex; gap: 7px; }
+.commit-input-row .text-input { min-width: 0; flex: 1; }
+.commit-results { display: grid; gap: 6px; padding: 7px; border-radius: 9px; background: #f8f7fb; }
+.commit-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; color: #59617a; font-size: 10px; }
+.commit-title strong { flex: 0 0 auto; color: #6d5b9b; font-family: ui-monospace, monospace; }
+.commit-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .development-heading { display: flex; align-items: center; justify-content: space-between; color: #596a7d; font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
 .context-chip { padding: 3px 5px; border-radius: 5px; color: #4d7c55; background: #e9f5e8; font-size: 8px; }
 .diff-branch-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; }

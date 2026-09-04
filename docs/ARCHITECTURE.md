@@ -42,6 +42,10 @@ Background Service Worker
 
 分支比较通过 `github:compareRefs` 消息调用 GitHub Compare API，客户端只返回领域模型 `RepositoryDiff`，不把原始 API 响应暴露给面板。面板可按变更文件筛选，并把选中的结果包装为 `ContextDiff`；Context Builder 将比较元数据、变更文件列表和可用 patch 渲染为结构化 Markdown，对 GitHub 未返回 patch 的文件输出明确的省略标记。
 
+### V0.3 Commit Context
+
+Commit Context 通过 `github:getCommit` 获取单个提交的元数据和文件 patch，客户端将其归一化为 `RepositoryCommit`，面板再转换成 `ContextCommit`。Commit 与 Branch Diff 共享 `DiffFile` 和 Diff 限制，但渲染层额外保留提交 message、author、date 和多个 parent，表达一次提交的意图与变化。
+
 ### `src/background/message-router.ts`
 
 消息路由集中处理权限边界：GitHub 请求只从后台发出，DeepSeek 附加请求只转发到当前活动标签页。路由统一返回 `{ ok: true, data }` 或 `{ ok: false, error }`，面板不需要理解原始 API 错误格式。
