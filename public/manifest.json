@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "DeepSeek GitHub Bridge",
+  "version": "0.1.0",
+  "description": "Read GitHub source files and attach them to the current DeepSeek prompt.",
+  "minimum_chrome_version": "114",
+  "action": {
+    "default_title": "Open DeepSeek GitHub Bridge"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "panel/index.html"
+  },
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.github.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.deepseek.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
+
