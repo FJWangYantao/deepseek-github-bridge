@@ -66,6 +66,10 @@ npm run dev
 
 选择仓库后，在 `Commit Context` 输入 Commit SHA，点击 `加载 Commit`，检查提交信息、作者、父提交、变更文件和 patch，再勾选文件并点击 `Add Commit to Context`。Commit Context 仍然是只读、人工确认的上下文，不会修改 GitHub 或自动发送 DeepSeek 消息。
 
+## V0.3 · Pull Request Context
+
+选择仓库后，在 `Pull Request Context` 输入 PR 编号，点击 `加载 PR`，检查标题、描述、状态、base/head、提交数、变更文件和 patch。PR 文件列表支持分页读取；勾选文件后点击 `Add PR to Context`。PR Context 会保留开发意图与分支关系，仍然是只读、人工确认的上下文，不包含评论或 review threads，也不会修改 GitHub 或自动发送 DeepSeek 消息。
+
 ## 手动验收重点
 
 - 先在 DeepSeek 输入框输入一段文字，再附加文件，确认原文字被保留且上下文以两个换行追加。

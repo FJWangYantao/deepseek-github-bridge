@@ -4,6 +4,7 @@ import {
   buildContext,
   contextCommitFromGitHub,
   contextDiffFromGitHub,
+  contextPullRequestFromGitHub,
   contextFileFromGitHub,
   contextTreeFromGitHub,
   getContextStats,
@@ -18,6 +19,7 @@ import type {
   CodeSearchResult,
   RepositoryCommit,
   RepositoryDiff,
+  RepositoryPullRequest,
   DeepSeekStatus,
   Repository,
   TreeEntry,
@@ -50,6 +52,10 @@ export default function App() {
   const [repositoryCommit, setRepositoryCommit] = useState<RepositoryCommit | null>(null);
   const [loadingCommit, setLoadingCommit] = useState(false);
   const [selectedCommitPaths, setSelectedCommitPaths] = useState<Set<string>>(() => new Set());
+  const [pullRequestNumber, setPullRequestNumber] = useState("");
+  const [repositoryPullRequest, setRepositoryPullRequest] = useState<RepositoryPullRequest | null>(null);
+  const [loadingPullRequest, setLoadingPullRequest] = useState(false);
+  const [selectedPullRequestPaths, setSelectedPullRequestPaths] = useState<Set<string>>(() => new Set());
   const [baseBranch, setBaseBranch] = useState("");
   const [headBranch, setHeadBranch] = useState("");
   const [repositoryDiff, setRepositoryDiff] = useState<RepositoryDiff | null>(null);
@@ -62,6 +68,7 @@ export default function App() {
   const searchRequestRef = useRef(0);
   const diffRequestRef = useRef(0);
   const commitRequestRef = useRef(0);
+  const pullRequestRequestRef = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -195,6 +202,9 @@ export default function App() {
     setCommitSha("");
     setRepositoryCommit(null);
     setSelectedCommitPaths(new Set());
+    setPullRequestNumber("");
+    setRepositoryPullRequest(null);
+    setSelectedPullRequestPaths(new Set());
     setPath("");
     setEntries([]);
   }, [repoKey, branchName]);
@@ -267,11 +277,15 @@ export default function App() {
       setCommitSha("");
       setRepositoryCommit(null);
       setSelectedCommitPaths(new Set());
+      setPullRequestNumber("");
+      setRepositoryPullRequest(null);
+      setSelectedPullRequestPaths(new Set());
       selectionVersionRef.current += 1;
       treeRequestRef.current += 1;
       searchRequestRef.current += 1;
       diffRequestRef.current += 1;
       commitRequestRef.current += 1;
+      pullRequestRequestRef.current += 1;
       setLoadingTree(false);
       setSearching(false);
       selectedItemsRef.current = [];
@@ -387,6 +401,62 @@ export default function App() {
     } finally {
       if (commitRequestRef.current === requestId) setLoadingCommit(false);
     }
+  }
+
+  async function loadPullRequest() {
+    const number = Number(pullRequestNumber.trim());
+    if (!selectedRepository || !Number.isInteger(number) || number <= 0) {
+      setError("请输入正整数的 Pull Request 编号。 ");
+      return;
+    }
+    const selectionVersion = selectionVersionRef.current;
+    const pullRequestRepository = selectedRepository;
+    const requestId = ++pullRequestRequestRef.current;
+    setLoadingPullRequest(true);
+    setError("");
+    try {
+      const pullRequest = await requestBridge({
+        type: "github:getPullRequest",
+        payload: { repo: pullRequestRepository, number },
+      });
+      if (
+        selectionVersionRef.current !== selectionVersion ||
+        pullRequestRequestRef.current !== requestId ||
+        selectedRepository?.fullName !== pullRequestRepository.fullName ||
+        Number(pullRequestNumber.trim()) !== number
+      ) return;
+      setRepositoryPullRequest(pullRequest);
+      setSelectedPullRequestPaths(new Set(pullRequest.files.map((file) => file.path)));
+    } catch (loadError) {
+      if (selectionVersionRef.current === selectionVersion && pullRequestRequestRef.current === requestId) {
+        setError(errorMessage(loadError));
+      }
+    } finally {
+      if (pullRequestRequestRef.current === requestId) setLoadingPullRequest(false);
+    }
+  }
+
+  function togglePullRequestPath(path: string) {
+    setSelectedPullRequestPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function addPullRequestToContext() {
+    if (!repositoryPullRequest) return;
+    const selectedFiles = repositoryPullRequest.files.filter((file) => selectedPullRequestPaths.has(file.path));
+    if (selectedFiles.length === 0) {
+      setError("请至少选择一个 Pull Request 文件。 ");
+      return;
+    }
+    const contextPullRequest = contextPullRequestFromGitHub({ ...repositoryPullRequest, files: selectedFiles });
+    const nextItems = appendSelectedItem(selectedItemsRef.current, contextPullRequest);
+    selectedItemsRef.current = nextItems;
+    setSelectedItems(nextItems);
+    setNotice(`已加入 ${selectedFiles.length} 个 Pull Request 文件。`);
   }
 
   function toggleCommitPath(path: string) {
@@ -731,6 +801,19 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                  <div className="diff-tools commit-tools">
+                    <div className="development-heading"><span>Pull Request Context</span><span className="context-chip">PR</span></div>
+                    <div className="commit-input-row"><input className="text-input" value={pullRequestNumber} onChange={(event) => { setPullRequestNumber(event.target.value); setRepositoryPullRequest(null); pullRequestRequestRef.current += 1; }} placeholder="PR Number" aria-label="PR Number" inputMode="numeric" /><button className="secondary-button" type="button" onClick={() => void loadPullRequest()} disabled={loadingPullRequest || !pullRequestNumber.trim()}>{loadingPullRequest ? "…" : "加载 PR"}</button></div>
+                    {repositoryPullRequest && (
+                      <div className="commit-results">
+                        <div className="commit-title"><strong>#{repositoryPullRequest.number}</strong><span>{repositoryPullRequest.title}</span></div>
+                        <div className="pr-branches"><span>{repositoryPullRequest.base}</span><span className="diff-arrow">←</span><span>{repositoryPullRequest.head}</span></div>
+                        <div className="diff-summary"><strong>{repositoryPullRequest.commits} commits</strong><span>{repositoryPullRequest.files.length} files</span><span className="diff-additions">+{repositoryPullRequest.additions}</span><span className="diff-deletions">−{repositoryPullRequest.deletions}</span></div>
+                        <div className="diff-files">{repositoryPullRequest.files.map((file) => <label className="diff-file-row" key={`${file.status}:${file.path}`}><input type="checkbox" checked={selectedPullRequestPaths.has(file.path)} onChange={() => togglePullRequestPath(file.path)} /><span className="diff-file-path">{file.path}</span><span className="diff-file-stat">+{file.additions} −{file.deletions}</span></label>)}</div>
+                        <button className="text-button diff-add-button" type="button" onClick={addPullRequestToContext} disabled={selectedPullRequestPaths.size === 0}>Add PR to Context</button>
+                      </div>
+                    )}
+                  </div>
                   <div className="diff-tools">
                     <div className="development-heading"><span>Development Context</span><span className="context-chip">DIFF</span></div>
                     <div className="diff-branch-row">
@@ -840,6 +923,13 @@ export default function App() {
             ) : (
               <>
                 <div className="selected-list">
+                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "pull_request" }> => item.type === "pull_request").map((pullRequest) => (
+                    <div className="selected-file selected-commit" key={`${pullRequest.repo}:${pullRequest.number}`}>
+                      <span className="file-type">PR</span>
+                      <span className="selected-file-name" title={`${pullRequest.repo}#${pullRequest.number}`}>#{pullRequest.number} · {pullRequest.title}</span>
+                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== pullRequest); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); }} aria-label="移除 Pull Request">×</button>
+                    </div>
+                  ))}
                   {selectedItems.filter((item): item is Extract<ContextItem, { type: "commit" }> => item.type === "commit").map((commit) => (
                     <div className="selected-file selected-commit" key={`${commit.repo}:${commit.sha}`}>
                       <span className="file-type">COMMIT</span>

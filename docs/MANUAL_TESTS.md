@@ -26,4 +26,9 @@
 | 20 | 取消部分 Commit 文件后点击“Add Commit to Context” | 只附加勾选文件，预览包含 message、metadata 和 Diff |
 | 21 | 加载 Merge Commit 或缺少 patch 的 Commit | 支持多个 parents，缺少 patch 时显示省略标记，不崩溃 |
 | 22 | Commit 请求返回前切换仓库 | 旧 Commit 不显示，也不会进入当前上下文 |
+| 23 | 输入正整数 PR 编号并点击“加载 PR” | 显示标题、描述、状态、draft、base/head、提交数、文件数和增删统计 |
+| 24 | 取消部分 PR 文件后点击“Add PR to Context” | 只附加勾选的 PR 文件，预览保留 PR 元数据、描述、base/head 和 Diff |
+| 25 | PR 文件超过 100 个 | 自动读取后续分页，文件不会被截断 |
+| 26 | 加载 Draft PR 或缺少 patch 的 PR | 显示 Draft 状态，缺少 patch 时显示省略标记，不崩溃 |
+| 27 | PR 请求返回前修改编号或切换仓库 | 旧 PR 不显示，也不会进入当前上下文 |
 

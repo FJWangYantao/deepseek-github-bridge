@@ -104,6 +104,28 @@ export interface RepositoryCommit {
   changedFiles: number;
 }
 
+export interface GetPullRequestInput {
+  repo: RepoRef;
+  number: number;
+}
+
+export interface RepositoryPullRequest {
+  repo: RepoRef;
+  number: number;
+  title: string;
+  body: string | null;
+  state: "open" | "closed";
+  draft: boolean;
+  base: string;
+  head: string;
+  author: string | null;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  files: DiffFile[];
+}
+
 export interface RepositoryDiff {
   repo: RepoRef;
   base: string;
@@ -187,6 +209,7 @@ export interface MessagePayloadMap {
   "github:getTree": GetTreeInput;
   "github:compareRefs": CompareRefsInput;
   "github:getCommit": GetCommitInput;
+  "github:getPullRequest": GetPullRequestInput;
   "github:searchCode": SearchCodeInput;
   "github:listDirectory": ListDirectoryInput;
   "github:readFile": ReadFileInput;
@@ -203,6 +226,7 @@ export interface MessageResponseMap {
   "github:getTree": RepositoryTree;
   "github:compareRefs": RepositoryDiff;
   "github:getCommit": RepositoryCommit;
+  "github:getPullRequest": RepositoryPullRequest;
   "github:searchCode": CodeSearchResult[];
   "github:listDirectory": TreeEntry[];
   "github:readFile": FileContent;

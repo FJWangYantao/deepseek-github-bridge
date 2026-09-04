@@ -50,6 +50,8 @@ async function routeMessage(
       return success(message.type, await github.compareRefs(message.payload));
     case "github:getCommit":
       return success(message.type, await github.getCommit(message.payload));
+    case "github:getPullRequest":
+      return success(message.type, await github.getPullRequest(message.payload));
     case "github:searchCode":
       return success(message.type, await github.searchCode(message.payload));
     case "github:listDirectory":

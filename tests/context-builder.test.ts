@@ -4,6 +4,7 @@ import {
   ContextBuildError,
   contextCommitFromGitHub,
   contextDiffFromGitHub,
+  contextPullRequestFromGitHub,
   contextTreeFromGitHub,
   getContextStats,
   type ContextFile,
@@ -98,6 +99,25 @@ describe("buildContext", () => {
     expect(result).toContain("- parent-1");
     expect(result).toContain("modified src/app.ts");
     expect(result).toContain("```diff");
+  });
+
+  it("renders pull request intent, metadata, files, and omitted patches", () => {
+    const result = buildContext([contextPullRequestFromGitHub({
+      repo: { owner: "octo", name: "demo" }, number: 12, title: "feat: context", body: "Please review",
+      state: "open", draft: true, base: "main", head: "feature/context", author: "octo",
+      commits: 3, additions: 5, deletions: 2, changedFiles: 2,
+      files: [
+        { path: "src/app.ts", status: "modified", additions: 5, deletions: 2, changes: 7, patch: "@@" },
+        { path: "assets/app.js", status: "modified", additions: 0, deletions: 0, changes: 0 },
+      ],
+    })]);
+    expect(result).toContain("Context item: GitHub pull request");
+    expect(result).toContain("PR: #12");
+    expect(result).toContain("Please review");
+    expect(result).toContain("Base: `main`");
+    expect(result).toContain("Head: `feature/context`");
+    expect(result).toContain("Commits: 3");
+    expect(result).toContain("Patch omitted by GitHub");
   });
 
   it("uses a longer fence when a patch contains backticks", () => {

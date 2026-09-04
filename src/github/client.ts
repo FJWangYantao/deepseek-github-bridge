@@ -8,6 +8,7 @@ import type {
   DiffFileStatus,
   FileContent,
   GetCommitInput,
+  GetPullRequestInput,
   GetTreeInput,
   GitHubUser,
   ListDirectoryInput,
@@ -16,6 +17,7 @@ import type {
   Repository,
   RepositoryCommit,
   RepositoryDiff,
+  RepositoryPullRequest,
   RepositoryTree,
   SearchCodeInput,
   TreeEntry,
@@ -49,6 +51,31 @@ interface GitHubTreeResponse {
     size?: number;
     url?: string;
   }>;
+}
+
+interface GitHubPullRequestResponse {
+  number: number;
+  title: string;
+  body: string | null;
+  state: string;
+  draft?: boolean;
+  user?: { login?: string } | null;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  base: { ref: string };
+  head: { ref: string };
+}
+
+interface GitHubPullRequestFileResponse {
+  filename: string;
+  previous_filename?: string;
+  status: string;
+  additions?: number;
+  deletions?: number;
+  changes?: number;
+  patch?: string;
 }
 
 interface GitHubCommitResponse {
@@ -199,6 +226,58 @@ export class GitHubClient {
     };
   }
 
+  async getPullRequest(input: GetPullRequestInput): Promise<RepositoryPullRequest> {
+    if (!Number.isInteger(input.number) || input.number <= 0) {
+      throw new GitHubApiError("VALIDATION_FAILED", "请输入正整数的 Pull Request 编号。 ");
+    }
+    const owner = encodeSegment(input.repo.owner);
+    const name = encodeSegment(input.repo.name);
+    const basePath = `/repos/${owner}/${name}/pulls/${input.number}`;
+    const data = await this.request<GitHubPullRequestResponse>(basePath);
+    if (
+      typeof data.number !== "number" ||
+      typeof data.title !== "string" ||
+      (data.body !== null && typeof data.body !== "string") ||
+      (data.state !== "open" && data.state !== "closed") ||
+      typeof data.base?.ref !== "string" ||
+      typeof data.head?.ref !== "string" ||
+      !Number.isInteger(data.commits) ||
+      !Number.isInteger(data.additions) ||
+      !Number.isInteger(data.deletions)
+    ) {
+      throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的 Pull Request 数据格式不正确。 ");
+    }
+
+    const files: DiffFile[] = [];
+    for (let page = 1; ; page += 1) {
+      const pageFiles = await this.request<GitHubPullRequestFileResponse[]>(
+        `${basePath}/files?per_page=100&page=${page}`,
+      );
+      if (!Array.isArray(pageFiles)) {
+        throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的 Pull Request 文件数据格式不正确。 ");
+      }
+      files.push(...pageFiles.map(mapDiffFile));
+      if (pageFiles.length < 100) break;
+    }
+
+    return {
+      repo: input.repo,
+      number: data.number,
+      title: data.title,
+      body: data.body,
+      state: data.state,
+      draft: Boolean(data.draft),
+      base: data.base.ref,
+      head: data.head.ref,
+      author: data.user?.login ?? null,
+      commits: data.commits,
+      additions: data.additions,
+      deletions: data.deletions,
+      changedFiles: files.length,
+      files,
+    };
+  }
+
   async getCommit(input: GetCommitInput): Promise<RepositoryCommit> {
     const sha = input.sha.trim();
     if (!sha) {
@@ -217,15 +296,7 @@ export class GitHubClient {
     ) {
       throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的提交数据格式不正确。 ");
     }
-    const files = (data.files ?? []).map((file) => ({
-      path: file.filename,
-      status: normalizeDiffStatus(file.status),
-      additions: file.additions ?? 0,
-      deletions: file.deletions ?? 0,
-      changes: file.changes ?? (file.additions ?? 0) + (file.deletions ?? 0),
-      ...(file.patch === undefined ? {} : { patch: file.patch }),
-      ...(file.previous_filename === undefined ? {} : { previousPath: file.previous_filename }),
-    }));
+    const files = (data.files ?? []).map(mapDiffFile);
     return {
       repo: input.repo,
       sha: data.sha,
@@ -451,6 +522,26 @@ function encodeSegment(value: string): string {
   return encodeURIComponent(value);
 }
 
+function mapDiffFile(file: {
+  filename: string;
+  previous_filename?: string;
+  status: string;
+  additions?: number;
+  deletions?: number;
+  changes?: number;
+  patch?: string;
+}): DiffFile {
+  return {
+    path: file.filename,
+    status: normalizeDiffStatus(file.status),
+    additions: file.additions ?? 0,
+    deletions: file.deletions ?? 0,
+    changes: file.changes ?? (file.additions ?? 0) + (file.deletions ?? 0),
+    ...(file.patch === undefined ? {} : { patch: file.patch }),
+    ...(file.previous_filename === undefined ? {} : { previousPath: file.previous_filename }),
+  };
+}
+
 function mapCommitAuthor(author?: { name?: string; email?: string; date?: string } | null): CommitAuthor | null {
   if (!author?.name || !author.date) return null;
   return {
@@ -506,7 +597,7 @@ function mapApiError(response: Response, body: unknown): GitHubApiError {
     });
   }
   if (response.status === 404) {
-    return new GitHubApiError("NOT_FOUND", "仓库、分支或文件不存在，或当前 Token 无权访问。", {
+    return new GitHubApiError("NOT_FOUND", "仓库、Pull Request、分支或文件不存在，或当前 Token 无权访问。", {
       status: response.status,
     });
   }

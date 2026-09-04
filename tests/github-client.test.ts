@@ -138,6 +138,46 @@ describe("GitHubClient", () => {
     await expect(client.getCommit({ repo: { owner: "octo", name: "demo" }, sha: " " })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
   });
 
+  it("maps pull request metadata, draft state, and paginated files", async () => {
+    const requests: string[] = [];
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      filename: `src/file-${index}.ts`, status: "modified", additions: 1, deletions: 0, changes: 1,
+    }));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.endsWith("/pulls/12")) {
+        return response({
+          number: 12, title: "feat: context", body: "Please review", state: "open", draft: true,
+          user: { login: "octo" }, commits: 3, additions: 101, deletions: 4, changed_files: 101,
+          base: { ref: "main" }, head: { ref: "feature/context" },
+        });
+      }
+      return new URL(url).searchParams.get("page") === "1"
+        ? response(firstPage)
+        : response([{ filename: "README.md", status: "modified", additions: 1, deletions: 4, changes: 5 }]);
+    });
+    const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
+
+    await expect(client.getPullRequest({ repo: { owner: "octo", name: "demo" }, number: 12 })).resolves.toMatchObject({
+      number: 12, title: "feat: context", body: "Please review", state: "open", draft: true,
+      base: "main", head: "feature/context", author: "octo", commits: 3,
+      additions: 101, deletions: 4, changedFiles: 101, files: expect.any(Array),
+    });
+    expect(requests).toEqual([
+      expect.stringContaining("/pulls/12"),
+      expect.stringContaining("/pulls/12/files?per_page=100&page=1"),
+      expect.stringContaining("/pulls/12/files?per_page=100&page=2"),
+    ]);
+  });
+
+  it("validates pull request numbers and preserves not-found errors", async () => {
+    const fetchMock = vi.fn(async () => response({ message: "Not Found" }, 404));
+    const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
+    await expect(client.getPullRequest({ repo: { owner: "octo", name: "demo" }, number: 0 })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    await expect(client.getPullRequest({ repo: { owner: "octo", name: "demo" }, number: 99 })).rejects.toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("Pull Request") });
+  });
+
   it("maps branch comparison results and preserves omitted patches", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       expect(String(input)).toContain("/repos/octo/demo/compare/main...feature%2Ffoo");

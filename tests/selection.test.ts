@@ -62,6 +62,19 @@ describe("appendSelectedFile", () => {
     expect(appendSelectedItem([commit], contextCommit("other/demo", "abc1234567890"))).toEqual([commit, contextCommit("other/demo", "abc1234567890")]);
   });
 
+  it("deduplicates pull requests by repository and number", () => {
+    const pullRequest = {
+      type: "pull_request" as const,
+      source: { repo: "octo/demo", ref: "feature/context" },
+      repo: "octo/demo", ref: "feature/context", number: 12, title: "feat", state: "open" as const,
+      draft: false, base: "main", head: "feature/context", commits: 1, additions: 1, deletions: 0,
+      changedFiles: 1, files: [],
+    };
+    expect(contextItemKey(pullRequest)).toBe("pr:octo/demo:12");
+    expect(appendSelectedItem([pullRequest], { ...pullRequest })).toEqual([pullRequest]);
+    expect(appendSelectedItem([pullRequest], { ...pullRequest, repo: "other/demo", source: { ...pullRequest.source, repo: "other/demo" } })).toHaveLength(2);
+  });
+
   it("keeps diffs with the same head but different bases distinct", () => {
     const mainDiff = contextDiff("main", "feature/foo");
     const releaseDiff = contextDiff("release", "feature/foo");

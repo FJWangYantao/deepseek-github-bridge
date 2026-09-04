@@ -46,6 +46,10 @@ Background Service Worker
 
 Commit Context 通过 `github:getCommit` 获取单个提交的元数据和文件 patch，客户端将其归一化为 `RepositoryCommit`，面板再转换成 `ContextCommit`。Commit 与 Branch Diff 共享 `DiffFile` 和 Diff 限制，但渲染层额外保留提交 message、author、date 和多个 parent，表达一次提交的意图与变化。
 
+### V0.3 Pull Request Context
+
+Pull Request Context 通过 `github:getPullRequest` 获取 PR 元数据，并分页读取 `/pulls/{number}/files`。客户端将标题、描述、状态、draft、base/head、提交统计和归一化后的 `DiffFile[]` 组装为 `RepositoryPullRequest`；面板按文件筛选后转换为 `ContextPullRequest`。PR 与 Diff/Commit 共享 patch 处理和上下文限制，但保留 PR 的开发意图、分支关系及审查入口。本阶段不读取 comments 或 review threads，也不执行 GitHub 写操作。
+
 ### `src/background/message-router.ts`
 
 消息路由集中处理权限边界：GitHub 请求只从后台发出，DeepSeek 附加请求只转发到当前活动标签页。路由统一返回 `{ ok: true, data }` 或 `{ ok: false, error }`，面板不需要理解原始 API 错误格式。

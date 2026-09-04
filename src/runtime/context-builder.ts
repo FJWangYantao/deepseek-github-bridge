@@ -1,7 +1,14 @@
 import { DEFAULT_CONTEXT_LIMITS } from "../shared/constants";
-import type { DiffFile, FileContent, RepositoryCommit, RepositoryDiff, RepositoryTree } from "../shared/types";
+import type {
+  DiffFile,
+  FileContent,
+  RepositoryCommit,
+  RepositoryDiff,
+  RepositoryPullRequest,
+  RepositoryTree,
+} from "../shared/types";
 
-export type ContextItemType = "file" | "tree" | "diff" | "commit";
+export type ContextItemType = "file" | "tree" | "diff" | "commit" | "pull_request";
 
 export interface ContextSource {
   repo: string;
@@ -42,6 +49,26 @@ export interface ContextDiff {
   files: DiffFile[];
 }
 
+export interface ContextPullRequest {
+  type: "pull_request";
+  source: ContextSource;
+  repo: string;
+  ref: string;
+  number: number;
+  title: string;
+  body?: string;
+  base: string;
+  head: string;
+  author?: string;
+  state: "open" | "closed";
+  draft: boolean;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  files: DiffFile[];
+}
+
 export interface ContextCommit {
   type: "commit";
   source: ContextSource;
@@ -59,7 +86,7 @@ export interface ContextCommit {
   changedFiles: number;
 }
 
-export type ContextItem = ContextFile | ContextTree | ContextDiff | ContextCommit;
+export type ContextItem = ContextFile | ContextTree | ContextDiff | ContextCommit | ContextPullRequest;
 
 export interface ContextLimits {
   maxFiles: number;
@@ -120,7 +147,9 @@ function renderContext(items: ContextItem[]): string {
   ];
 
   const commits = items.filter((item): item is ContextCommit => item.type === "commit");
+  const pullRequests = items.filter((item): item is ContextPullRequest => item.type === "pull_request");
   const sections = [
+    ...pullRequests.map(renderPullRequest),
     ...commits.map(renderCommit),
     ...diffs.map(renderDiff),
     ...trees.map(renderTree),
@@ -215,6 +244,45 @@ function renderCommit(commit: ContextCommit): string {
   ].join("\n");
 }
 
+function renderPullRequest(pr: ContextPullRequest): string {
+  const changedFiles = pr.files
+    .map((file) => `- ${file.status} ${file.previousPath ? `${file.previousPath} → ` : ""}${file.path}`)
+    .join("\n");
+  const patch = pr.files
+    .map((file) => file.patch !== undefined
+      ? `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n${file.patch}`
+      : `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n# Patch omitted by GitHub (${file.status}; +${file.additions} -${file.deletions})`)
+    .join("\n");
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(patch) + 1));
+  return [
+    "Context item: GitHub pull request",
+    `Repository: \`${pr.repo}\``,
+    `PR: #${pr.number}`,
+    `Title: ${pr.title}`,
+    `State: ${pr.state}`,
+    `Draft: ${pr.draft}`,
+    ...(pr.author ? [`Author: ${pr.author}`] : []),
+    `Base: \`${pr.base}\``,
+    `Head: \`${pr.head}\``,
+    "",
+    "Description:",
+    pr.body || "(none)",
+    "",
+    `Commits: ${pr.commits}`,
+    `Files changed: ${pr.changedFiles}`,
+    `Additions: ${pr.additions}`,
+    `Deletions: ${pr.deletions}`,
+    "",
+    "Changed files:",
+    changedFiles || "- (none)",
+    "",
+    "Diff:",
+    `${fence}diff`,
+    patch || "# No patch returned by GitHub.",
+    fence,
+  ].join("\n");
+}
+
 function renderTree(tree: ContextTree): string {
   const lines = tree.entries
     .slice()
@@ -260,6 +328,28 @@ export function contextTreeFromGitHub(tree: RepositoryTree): ContextTree {
     sha: tree.sha,
     truncated: tree.truncated,
     entries: tree.entries,
+  };
+}
+
+export function contextPullRequestFromGitHub(pr: RepositoryPullRequest): ContextPullRequest {
+  return {
+    type: "pull_request",
+    source: { repo: `${pr.repo.owner}/${pr.repo.name}`, ref: pr.head },
+    repo: `${pr.repo.owner}/${pr.repo.name}`,
+    ref: pr.head,
+    number: pr.number,
+    title: pr.title,
+    ...(pr.body === null ? {} : { body: pr.body }),
+    base: pr.base,
+    head: pr.head,
+    ...(pr.author === null ? {} : { author: pr.author }),
+    state: pr.state,
+    draft: pr.draft,
+    commits: pr.commits,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    changedFiles: pr.changedFiles,
+    files: pr.files,
   };
 }
 
@@ -310,9 +400,20 @@ export function getContextStats(
   const files = items.filter((item): item is ContextFile => item.type === "file");
   const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
   const commits = items.filter((item): item is ContextCommit => item.type === "commit");
+  const pullRequests = items.filter((item): item is ContextPullRequest => item.type === "pull_request");
   const totalCharacters = files.reduce((total, file) => total + file.content.length, 0) +
     diffs.reduce((total, diff) => total + diff.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0) +
-    commits.reduce((total, commit) => total + commit.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0);
+    commits.reduce((total, commit) => total + commit.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0) +
+    pullRequests.reduce((total, pr) => total + pr.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0);
+  for (const pr of pullRequests) {
+    const prCharacters = pr.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+    if (pr.files.length > (limits.maxDiffFiles ?? 50)) {
+      warnings.push(`PR #${pr.number} 包含 ${pr.files.length} 个文件。`);
+    }
+    if (prCharacters > (limits.warnDiffCharacters ?? 40_000)) {
+      warnings.push(`PR #${pr.number} Diff 较大（${prCharacters.toLocaleString()} 字符）。`);
+    }
+  }
   for (const commit of commits) {
     const commitCharacters = commit.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
     if (commitCharacters > (limits.warnDiffCharacters ?? 40_000)) {
@@ -355,6 +456,7 @@ export function validateContextItems(
   const files = items.filter((item): item is ContextFile => item.type === "file");
   const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
   const commits = items.filter((item): item is ContextCommit => item.type === "commit");
+  const pullRequests = items.filter((item): item is ContextPullRequest => item.type === "pull_request");
   if (items.length === 0) {
     throw new ContextBuildError("NO_FILES", "请至少选择一个上下文项。 ");
   }
@@ -375,6 +477,16 @@ export function validateContextItems(
   const maxDiffFiles = limits.maxDiffFiles ?? 50;
   const maxDiffCharacters = limits.maxDiffCharacters ?? 100_000;
   let totalCharacters = 0;
+  for (const pr of pullRequests) {
+    const prCharacters = pr.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+    if (pr.files.length > maxDiffFiles) {
+      throw new ContextBuildError("TOO_MANY_FILES", `PR #${pr.number} 包含 ${pr.files.length} 个文件，超过 Diff 上限 ${maxDiffFiles} 个。`);
+    }
+    if (prCharacters > maxDiffCharacters) {
+      throw new ContextBuildError("TOTAL_TOO_LARGE", `PR #${pr.number} Diff 约 ${prCharacters.toLocaleString()} 字符，超过限制 ${maxDiffCharacters.toLocaleString()}。`);
+    }
+    totalCharacters += prCharacters;
+  }
   for (const commit of commits) {
     const commitCharacters = commit.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
     if (commit.files.length > maxDiffFiles) {

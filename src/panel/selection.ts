@@ -13,6 +13,8 @@ export function contextItemKey(item: ContextItem): string {
       return `diff:${item.repo}:${item.base}...${item.head}`;
     case "commit":
       return `commit:${item.repo}:${item.sha}`;
+    case "pull_request":
+      return `pr:${item.repo}:${item.number}`;
   }
 }
 
