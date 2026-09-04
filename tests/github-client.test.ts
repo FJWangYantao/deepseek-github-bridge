@@ -113,7 +113,7 @@ describe("GitHubClient", () => {
           committer: { name: "Octo", date: "2026-01-01T00:00:00Z" },
         },
         parents: [{ sha: "parent-1" }, { sha: "parent-2" }],
-        stats: { additions: 5, deletions: 2, total: 2 },
+        stats: { additions: 5, deletions: 2, total: 7 },
         files: [
           { filename: "src/app.ts", status: "modified", additions: 5, deletions: 2, changes: 7, patch: "@@" },
           { filename: "assets/app.js", status: "modified", additions: 0, deletions: 0, changes: 0 },

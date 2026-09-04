@@ -237,7 +237,7 @@ export class GitHubClient {
       files,
       additions: data.stats?.additions ?? files.reduce((total, file) => total + file.additions, 0),
       deletions: data.stats?.deletions ?? files.reduce((total, file) => total + file.deletions, 0),
-      changedFiles: data.stats?.total ?? files.length,
+      changedFiles: files.length,
     };
   }
 

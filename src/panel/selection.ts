@@ -3,43 +3,25 @@ import {
   validateContextItems,
 } from "../runtime/context-builder";
 
+export function contextItemKey(item: ContextItem): string {
+  switch (item.type) {
+    case "file":
+      return `file:${item.repo}:${item.ref}:${item.path}`;
+    case "tree":
+      return `tree:${item.repo}:${item.ref}`;
+    case "diff":
+      return `diff:${item.repo}:${item.base}...${item.head}`;
+    case "commit":
+      return `commit:${item.repo}:${item.sha}`;
+  }
+}
+
 export function appendSelectedItem(
   items: ContextItem[],
   contextItem: ContextItem,
 ): ContextItem[] {
-  if (
-    contextItem.type === "tree" &&
-    items.some(
-      (item) =>
-        item.type === "tree" &&
-        item.repo === contextItem.repo &&
-        item.ref === contextItem.ref,
-    )
-  ) {
-    return items;
-  }
-  if (
-    contextItem.type === "diff" &&
-    items.some(
-      (item) =>
-        item.type === "diff" &&
-        item.repo === contextItem.repo &&
-        item.base === contextItem.base &&
-        item.head === contextItem.head,
-    )
-  ) {
-    return items;
-  }
-  if (
-    contextItem.type === "file" &&
-    items.some(
-      (item) =>
-        item.type === "file" &&
-        item.repo === contextItem.repo &&
-        item.ref === contextItem.ref &&
-        item.path === contextItem.path,
-    )
-  ) {
+  const key = contextItemKey(contextItem);
+  if (items.some((item) => contextItemKey(item) === key)) {
     return items;
   }
 

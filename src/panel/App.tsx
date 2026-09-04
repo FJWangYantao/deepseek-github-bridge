@@ -377,7 +377,8 @@ export default function App() {
       if (
         selectionVersionRef.current !== selectionVersion ||
         commitRequestRef.current !== requestId ||
-        selectedRepository?.fullName !== commitRepository.fullName
+        selectedRepository?.fullName !== commitRepository.fullName ||
+        commitSha.trim() !== sha
       ) return;
       setRepositoryCommit(commit);
       setSelectedCommitPaths(new Set(commit.files.map((file) => file.path)));
@@ -720,7 +721,7 @@ export default function App() {
                   </div>
                   <div className="diff-tools commit-tools">
                     <div className="development-heading"><span>Commit Context</span><span className="context-chip">COMMIT</span></div>
-                    <div className="commit-input-row"><input className="text-input" value={commitSha} onChange={(event) => setCommitSha(event.target.value)} placeholder="Commit SHA" aria-label="Commit SHA" /><button className="secondary-button" type="button" onClick={() => void loadCommit()} disabled={loadingCommit || !commitSha.trim()}>{loadingCommit ? "…" : "加载 Commit"}</button></div>
+                    <div className="commit-input-row"><input className="text-input" value={commitSha} onChange={(event) => { setCommitSha(event.target.value); setRepositoryCommit(null); commitRequestRef.current += 1; }} placeholder="Commit SHA" aria-label="Commit SHA" /><button className="secondary-button" type="button" onClick={() => void loadCommit()} disabled={loadingCommit || !commitSha.trim()}>{loadingCommit ? "…" : "加载 Commit"}</button></div>
                     {repositoryCommit && (
                       <div className="commit-results">
                         <div className="commit-title"><strong>{repositoryCommit.shortSha}</strong><span>{repositoryCommit.message.split("\n")[0]}</span></div>

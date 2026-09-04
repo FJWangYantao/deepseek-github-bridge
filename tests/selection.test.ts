@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { appendSelectedItem, appendSelectedFile } from "../src/panel/selection";
-import type { ContextDiff, ContextFile } from "../src/runtime/context-builder";
+import { appendSelectedItem, appendSelectedFile, contextItemKey } from "../src/panel/selection";
+import type { ContextCommit, ContextDiff, ContextFile } from "../src/runtime/context-builder";
 
 const contextFile = (path: string): ContextFile => ({
   type: "file",
@@ -10,6 +10,21 @@ const contextFile = (path: string): ContextFile => ({
   path,
   language: "ts",
   content: `export const ${path.replace(/\W/g, "_")} = true;`,
+});
+
+const contextCommit = (repo: string, sha: string): ContextCommit => ({
+  type: "commit",
+  source: { repo, ref: sha },
+  repo,
+  ref: sha,
+  sha,
+  shortSha: sha.slice(0, 7),
+  message: "fix",
+  parents: [],
+  files: [],
+  additions: 0,
+  deletions: 0,
+  changedFiles: 0,
 });
 
 const contextDiff = (base: string, head: string): ContextDiff => ({
@@ -38,6 +53,13 @@ describe("appendSelectedFile", () => {
     const first = contextFile("src/first.ts");
 
     expect(appendSelectedFile([first], first)).toEqual([first]);
+  });
+
+  it("uses stable keys and deduplicates commits", () => {
+    const commit = contextCommit("octo/demo", "abc1234567890");
+    expect(contextItemKey(commit)).toBe("commit:octo/demo:abc1234567890");
+    expect(appendSelectedItem([commit], contextCommit("octo/demo", "abc1234567890"))).toEqual([commit]);
+    expect(appendSelectedItem([commit], contextCommit("other/demo", "abc1234567890"))).toEqual([commit, contextCommit("other/demo", "abc1234567890")]);
   });
 
   it("keeps diffs with the same head but different bases distinct", () => {
