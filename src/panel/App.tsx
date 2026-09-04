@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../github/errors";
 import {
   buildContext,
   contextFileFromGitHub,
   getContextStats,
   type ContextFile,
-  validateContextFiles,
 } from "../runtime/context-builder";
+import { appendSelectedFile } from "./selection";
 import { requestBridge } from "../runtime/messages";
 import type {
   AuthStatus,
@@ -33,7 +33,10 @@ export default function App() {
   const [loadingRepositories, setLoadingRepositories] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [loadingDirectory, setLoadingDirectory] = useState(false);
-  const [pendingFile, setPendingFile] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<Set<string>>(() => new Set());
+  const selectedFilesRef = useRef<ContextFile[]>([]);
+  const pendingFilesRef = useRef<Map<string, symbol>>(new Map());
+  const selectionVersionRef = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -146,6 +149,10 @@ export default function App() {
   }, [selectedRepository]);
 
   useEffect(() => {
+    selectionVersionRef.current += 1;
+    selectedFilesRef.current = [];
+    pendingFilesRef.current.clear();
+    setPendingFiles(new Set());
     setSelectedFiles([]);
     setPath("");
     setEntries([]);
@@ -209,6 +216,10 @@ export default function App() {
       setBranches([]);
       setBranchName("");
       setEntries([]);
+      selectionVersionRef.current += 1;
+      selectedFilesRef.current = [];
+      pendingFilesRef.current.clear();
+      setPendingFiles(new Set());
       setSelectedFiles([]);
       setNotice("已断开 GitHub，扩展存储中的 Token 已清除。 ");
     } catch (disconnectError) {
@@ -218,27 +229,26 @@ export default function App() {
 
   async function toggleFile(entry: TreeEntry) {
     if (!selectedRepository || !branchName || entry.type !== "file") return;
-    const existing = selectedFiles.find(
+
+    const selectionKey = `${selectedRepository.fullName}:${branchName}:${entry.path}`;
+    const existing = selectedFilesRef.current.find(
       (file) =>
         file.repo === selectedRepository.fullName &&
         file.ref === branchName &&
         file.path === entry.path,
     );
     if (existing) {
-      setSelectedFiles((files) =>
-        files.filter(
-          (file) =>
-            !(
-              file.repo === selectedRepository.fullName &&
-              file.ref === branchName &&
-              file.path === entry.path
-            ),
-        ),
-      );
+      const nextFiles = selectedFilesRef.current.filter((file) => file !== existing);
+      selectedFilesRef.current = nextFiles;
+      setSelectedFiles(nextFiles);
       return;
     }
+    if (pendingFilesRef.current.has(selectionKey)) return;
 
-    setPendingFile(entry.path);
+    const selectionVersion = selectionVersionRef.current;
+    const requestToken = Symbol(selectionKey);
+    pendingFilesRef.current.set(selectionKey, requestToken);
+    setPendingFiles(new Set(pendingFilesRef.current.keys()));
     setError("");
     try {
       const file = await requestBridge({
@@ -249,15 +259,21 @@ export default function App() {
           ref: branchName,
         },
       });
+      if (selectionVersionRef.current !== selectionVersion) return;
       const contextFile = contextFileFromGitHub(file);
-      const nextFiles = [...selectedFiles, contextFile];
-      validateContextFiles(nextFiles);
+      // Use the ref as the authoritative latest selection. Each async response
+      // appends to the current value, instead of the render that started it.
+      const nextFiles = appendSelectedFile(selectedFilesRef.current, contextFile);
+      selectedFilesRef.current = nextFiles;
       setSelectedFiles(nextFiles);
       setNotice(`已加载 ${entry.path}。`);
     } catch (loadError) {
       setError(errorMessage(loadError));
     } finally {
-      setPendingFile("");
+      if (pendingFilesRef.current.get(selectionKey) === requestToken) {
+        pendingFilesRef.current.delete(selectionKey);
+        setPendingFiles(new Set(pendingFilesRef.current.keys()));
+      }
     }
   }
 
@@ -446,7 +462,9 @@ export default function App() {
                           file.ref === branchName &&
                           file.path === entry.path,
                       );
-                      const isPending = pendingFile === entry.path;
+                      const isPending = pendingFiles.has(
+                        `${selectedRepository.fullName}:${branchName}:${entry.path}`,
+                      );
                       const isDirectory = entry.type === "dir";
                       const isSelectable = entry.type === "file";
                       return (
@@ -499,7 +517,11 @@ export default function App() {
                       <button
                         className="remove-file"
                         type="button"
-                        onClick={() => setSelectedFiles((files) => files.filter((item) => item !== file))}
+                        onClick={() => {
+                          const nextFiles = selectedFilesRef.current.filter((item) => item !== file);
+                          selectedFilesRef.current = nextFiles;
+                          setSelectedFiles(nextFiles);
+                        }}
                         aria-label={`移除 ${file.path}`}
                       >×</button>
                     </div>

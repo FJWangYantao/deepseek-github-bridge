@@ -76,13 +76,22 @@ export class GitHubClient {
   async listBranches(repo: RepoRef): Promise<Branch[]> {
     const owner = encodeSegment(repo.owner);
     const name = encodeSegment(repo.name);
-    const data = await this.request<GitHubBranchResponse[]>(
-      `/repos/${owner}/${name}/branches?per_page=100`,
-    );
-    return data.map((branch) => ({
-      name: branch.name,
-      protected: branch.protected,
-    }));
+    const branches: Branch[] = [];
+
+    for (let page = 1; ; page += 1) {
+      const data = await this.request<GitHubBranchResponse[]>(
+        `/repos/${owner}/${name}/branches?per_page=100&page=${page}`,
+      );
+      branches.push(
+        ...data.map((branch) => ({
+          name: branch.name,
+          protected: branch.protected,
+        })),
+      );
+      if (data.length < 100) break;
+    }
+
+    return branches;
   }
 
   async listDirectory(input: ListDirectoryInput): Promise<TreeEntry[]> {
@@ -153,7 +162,10 @@ export class GitHubClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${GITHUB_API_BASE}${path}`, {
+      // WorkerGlobalScope.fetch is brand-checked. Calling it as
+      // `this.fetchImpl(...)` would bind `this` to GitHubClient and throw
+      // "Illegal invocation" in Chrome's extension service worker.
+      response = await this.fetchImpl.call(globalThis, `${GITHUB_API_BASE}${path}`, {
         ...init,
         headers: {
           Accept: "application/vnd.github+json",
@@ -162,10 +174,17 @@ export class GitHubClient {
           ...(init.headers ?? {}),
         },
       });
-    } catch {
+    } catch (error) {
+      // Keep the token out of diagnostics while preserving the browser-level
+      // failure that is otherwise indistinguishable from an API 401/403.
+      console.error("[GitHubClient] request failed", {
+        path,
+        name: error instanceof Error ? error.name : "UnknownError",
+        message: error instanceof Error ? error.message : String(error),
+      });
       throw new GitHubApiError(
         "NETWORK_ERROR",
-        "无法连接 GitHub API，请检查网络后重试。",
+        `无法连接 GitHub API（${path}），请检查网络、扩展权限或代理设置后重试。`,
       );
     }
 
