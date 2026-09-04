@@ -77,7 +77,6 @@ export interface CodeSearchResult {
 
 export interface SearchCodeInput {
   repo: RepoRef;
-  ref: string;
   query: string;
 }
 

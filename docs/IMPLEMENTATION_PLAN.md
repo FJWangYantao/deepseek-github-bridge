@@ -256,7 +256,7 @@ readFile(repo, path, ref)
 Later:
 
 ```ts
-searchCode()
+searchCode(repo, query) // GitHub indexed code search; no branch/ref guarantee
 getCommit()
 getDiff()
 createBranch()

@@ -45,6 +45,8 @@ export default function App() {
   const selectedItemsRef = useRef<ContextItem[]>([]);
   const pendingFilesRef = useRef<Map<string, symbol>>(new Map());
   const selectionVersionRef = useRef(0);
+  const treeRequestRef = useRef(0);
+  const searchRequestRef = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -158,6 +160,10 @@ export default function App() {
 
   useEffect(() => {
     selectionVersionRef.current += 1;
+    treeRequestRef.current += 1;
+    searchRequestRef.current += 1;
+    setLoadingTree(false);
+    setSearching(false);
     selectedItemsRef.current = [];
     pendingFilesRef.current.clear();
     setPendingFiles(new Set());
@@ -231,6 +237,10 @@ export default function App() {
       setSearchQuery("");
       setSearchResults([]);
       selectionVersionRef.current += 1;
+      treeRequestRef.current += 1;
+      searchRequestRef.current += 1;
+      setLoadingTree(false);
+      setSearching(false);
       selectedItemsRef.current = [];
       pendingFilesRef.current.clear();
       setPendingFiles(new Set());
@@ -251,50 +261,76 @@ export default function App() {
       return;
     }
 
+    const selectionVersion = selectionVersionRef.current;
+    const treeRepository = selectedRepository;
+    const treeRef = branchName;
+    const requestId = ++treeRequestRef.current;
     setLoadingTree(true);
     setError("");
     try {
       const tree = contextTreeFromGitHub(
         await requestBridge({
           type: "github:getTree",
-          payload: { repo: selectedRepository, ref: branchName },
+          payload: { repo: treeRepository, ref: treeRef },
         }),
       );
+      if (
+        selectionVersionRef.current !== selectionVersion ||
+        treeRequestRef.current !== requestId ||
+        selectedRepository?.fullName !== treeRepository.fullName ||
+        branchName !== treeRef
+      ) return;
       const nextItems = appendSelectedItem(selectedItemsRef.current, tree);
       selectedItemsRef.current = nextItems;
       setSelectedItems(nextItems);
       setRepositoryTree(tree);
       setNotice("已加入仓库目录树。");
     } catch (loadError) {
-      setError(errorMessage(loadError));
+      if (
+        selectionVersionRef.current === selectionVersion &&
+        treeRequestRef.current === requestId
+      ) setError(errorMessage(loadError));
     } finally {
-      setLoadingTree(false);
+      if (treeRequestRef.current === requestId) setLoadingTree(false);
     }
   }
 
   async function searchRepository() {
     if (!selectedRepository || !branchName || !searchQuery.trim()) return;
+    const selectionVersion = selectionVersionRef.current;
+    const searchRepositoryRef = selectedRepository;
+    const searchRef = branchName;
+    const searchText = searchQuery.trim();
+    const requestId = ++searchRequestRef.current;
     setSearching(true);
     setError("");
     try {
-      setSearchResults(
-        await requestBridge({
-          type: "github:searchCode",
-          payload: {
-            repo: selectedRepository,
-            ref: branchName,
-            query: searchQuery,
-          },
-        }),
-      );
+      const results = await requestBridge({
+        type: "github:searchCode",
+        payload: {
+          repo: searchRepositoryRef,
+          query: searchText,
+        },
+      });
+      if (
+        selectionVersionRef.current !== selectionVersion ||
+        searchRequestRef.current !== requestId ||
+        selectedRepository?.fullName !== searchRepositoryRef.fullName ||
+        branchName !== searchRef
+      ) return;
+      setSearchResults(results);
     } catch (searchError) {
-      setError(errorMessage(searchError));
+      if (
+        selectionVersionRef.current === selectionVersion &&
+        searchRequestRef.current === requestId
+      ) setError(errorMessage(searchError));
     } finally {
-      setSearching(false);
+      if (searchRequestRef.current === requestId) setSearching(false);
     }
   }
 
   async function addSearchResult(result: CodeSearchResult) {
+    if (!selectedRepository || !branchName || result.repositoryFullName !== selectedRepository.fullName) return;
     const entry: TreeEntry = {
       name: result.name,
       path: result.path,

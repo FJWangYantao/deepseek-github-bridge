@@ -120,10 +120,10 @@ describe("GitHubClient", () => {
     });
     const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
 
-    await expect(client.searchCode({ repo: { owner: "octo", name: "demo" }, ref: "main", query: "auth" })).resolves.toEqual([
+    await expect(client.searchCode({ repo: { owner: "octo", name: "demo" }, query: "auth" })).resolves.toEqual([
       expect.objectContaining({ path: "src/github/auth.ts", repositoryFullName: "octo/demo" }),
     ]);
-    await expect(client.searchCode({ repo: { owner: "octo", name: "demo" }, ref: "main", query: " " })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    await expect(client.searchCode({ repo: { owner: "octo", name: "demo" }, query: " " })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
   });
 
   it("normalizes authentication failures", async () => {

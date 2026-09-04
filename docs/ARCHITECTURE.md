@@ -36,7 +36,7 @@ Background Service Worker
 
 ### V0.2 Context Explorer
 
-`GitHubClient` 通过 `getTree()` 调用递归 Git Trees API，通过 `searchCode()` 调用只读 Code Search API。面板仍然只通过类型化消息访问 GitHub，并把仓库树、搜索得到的文件和手动浏览得到的文件统一放入 `selectedItems`，再交给 Context Builder 预览和附加。GitHub Code Search 按 GitHub 的索引规则工作，结果不保证来自非默认分支；文件读取仍以用户选择的 ref 为准。
+`GitHubClient` 通过 `getTree()` 调用递归 Git Trees API，通过 `searchCode()` 调用只读 Code Search API。面板仍然只通过类型化消息访问 GitHub，并把仓库树、搜索得到的文件和手动浏览得到的文件统一放入 `selectedItems`，再交给 Context Builder 预览和附加。Code Search 输入只包含仓库和查询词，因为 GitHub 的代码索引不提供可靠的非默认分支搜索语义；搜索结果加入上下文时，文件仍以面板当前选择的仓库和 ref 读取，并丢弃切换仓库/分支后的过期响应。
 
 ### `src/background/message-router.ts`
 
