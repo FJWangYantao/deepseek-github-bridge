@@ -77,6 +77,20 @@ describe("buildContext", () => {
     expect(result).toContain("```diff");
   });
 
+  it("uses a longer fence when a patch contains backticks", () => {
+    const result = buildContext([contextDiffFromGitHub({
+      repo: { owner: "octo", name: "demo" },
+      base: "main",
+      head: "docs",
+      status: "ahead",
+      aheadBy: 1,
+      behindBy: 0,
+      totalCommits: 1,
+      files: [{ path: "README.md", status: "modified", additions: 2, deletions: 0, changes: 2, patch: "+```ts\n+const value = 1;\n+```" }],
+    })]);
+    expect(result).toContain("````diff");
+  });
+
   it("reports useful size statistics and warnings", () => {
     const result = getContextStats([file({ content: "x".repeat(60) })], {
       maxFiles: 12,

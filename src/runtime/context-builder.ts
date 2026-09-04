@@ -137,6 +137,7 @@ function renderDiff(diff: ContextDiff): string {
       return `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n# Patch omitted by GitHub (${file.status}; +${file.additions} -${file.deletions})`;
     })
     .join("\n");
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(patch) + 1));
   return [
     "Context item: Git diff",
     `Repository: \`${diff.repo}\``,
@@ -152,9 +153,9 @@ function renderDiff(diff: ContextDiff): string {
     "Changed files:",
     changedFiles || "- (none)",
     "",
-    "```diff",
+    `${fence}diff`,
     patch || "# No patch returned by GitHub.",
-    "```",
+    fence,
   ].join("\n");
 }
 

@@ -331,12 +331,16 @@ export default function App() {
         selectionVersionRef.current !== selectionVersion ||
         diffRequestRef.current !== requestId ||
         selectedRepository?.fullName !== diffRepository.fullName ||
-        branchName !== head
+        baseBranch !== base ||
+        headBranch !== head
       ) return;
       setRepositoryDiff(diff);
       setSelectedDiffPaths(new Set(diff.files.map((file) => file.path)));
     } catch (loadError) {
-      if (selectionVersionRef.current === selectionVersion && diffRequestRef.current === requestId) setError(errorMessage(loadError));
+      if (
+        selectionVersionRef.current === selectionVersion &&
+        diffRequestRef.current === requestId
+      ) setError(errorMessage(loadError));
     } finally {
       if (diffRequestRef.current === requestId) setLoadingDiff(false);
     }

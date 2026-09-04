@@ -8,12 +8,25 @@ export function appendSelectedItem(
   contextItem: ContextItem,
 ): ContextItem[] {
   if (
+    contextItem.type === "tree" &&
     items.some(
       (item) =>
-        item.type === contextItem.type &&
+        item.type === "tree" &&
         item.repo === contextItem.repo &&
         item.ref === contextItem.ref,
-    ) && (contextItem.type === "tree" || contextItem.type === "diff")
+    )
+  ) {
+    return items;
+  }
+  if (
+    contextItem.type === "diff" &&
+    items.some(
+      (item) =>
+        item.type === "diff" &&
+        item.repo === contextItem.repo &&
+        item.base === contextItem.base &&
+        item.head === contextItem.head,
+    )
   ) {
     return items;
   }
