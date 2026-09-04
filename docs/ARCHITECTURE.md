@@ -38,6 +38,10 @@ Background Service Worker
 
 `GitHubClient` 通过 `getTree()` 调用递归 Git Trees API，通过 `searchCode()` 调用只读 Code Search API。面板仍然只通过类型化消息访问 GitHub，并把仓库树、搜索得到的文件和手动浏览得到的文件统一放入 `selectedItems`，再交给 Context Builder 预览和附加。Code Search 输入只包含仓库和查询词，因为 GitHub 的代码索引不提供可靠的非默认分支搜索语义；搜索结果加入上下文时，文件仍以面板当前选择的仓库和 ref 读取，并丢弃切换仓库/分支后的过期响应。
 
+### V0.3 Branch Diff Context
+
+分支比较通过 `github:compareRefs` 消息调用 GitHub Compare API，客户端只返回领域模型 `RepositoryDiff`，不把原始 API 响应暴露给面板。面板可按变更文件筛选，并把选中的结果包装为 `ContextDiff`；Context Builder 将比较元数据、变更文件列表和可用 patch 渲染为结构化 Markdown，对 GitHub 未返回 patch 的文件输出明确的省略标记。
+
 ### `src/background/message-router.ts`
 
 消息路由集中处理权限边界：GitHub 请求只从后台发出，DeepSeek 附加请求只转发到当前活动标签页。路由统一返回 `{ ok: true, data }` 或 `{ ok: false, error }`，面板不需要理解原始 API 错误格式。

@@ -1,7 +1,10 @@
 import { GITHUB_API_BASE, GITHUB_API_VERSION } from "../shared/constants";
 import type {
   Branch,
+  CompareRefsInput,
   CodeSearchResult,
+  DiffFile,
+  DiffFileStatus,
   FileContent,
   GetTreeInput,
   GitHubUser,
@@ -9,6 +12,7 @@ import type {
   ReadFileInput,
   RepoRef,
   Repository,
+  RepositoryDiff,
   RepositoryTree,
   SearchCodeInput,
   TreeEntry,
@@ -41,6 +45,22 @@ interface GitHubTreeResponse {
     sha: string;
     size?: number;
     url?: string;
+  }>;
+}
+
+interface GitHubCompareResponse {
+  status: string;
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  files?: Array<{
+    filename: string;
+    previous_filename?: string;
+    status: string;
+    additions?: number;
+    deletions?: number;
+    changes?: number;
+    patch?: string;
   }>;
 }
 
@@ -153,6 +173,55 @@ export class GitHubClient {
           ...(entry.size === undefined ? {} : { size: entry.size }),
           ...(entry.url === undefined ? {} : { url: entry.url }),
         })),
+    };
+  }
+
+  async compareRefs(input: CompareRefsInput): Promise<RepositoryDiff> {
+    const base = input.base.trim();
+    const head = input.head.trim();
+    if (!base || !head || base === head) {
+      throw new GitHubApiError(
+        "VALIDATION_FAILED",
+        "请选择两个不同的分支进行比较。",
+      );
+    }
+
+    const owner = encodeSegment(input.repo.owner);
+    const name = encodeSegment(input.repo.name);
+    const comparison = `${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
+    const data = await this.request<GitHubCompareResponse>(
+      `/repos/${owner}/${name}/compare/${comparison}`,
+    );
+    if (
+      typeof data.status !== "string" ||
+      typeof data.ahead_by !== "number" ||
+      typeof data.behind_by !== "number" ||
+      typeof data.total_commits !== "number" ||
+      (data.files !== undefined && !Array.isArray(data.files))
+    ) {
+      throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的比较数据格式不正确。");
+    }
+    if ((data.files?.length ?? 0) > 50) {
+      throw new GitHubApiError("DIFF_TOO_LARGE", "比较结果超过 50 个文件，已拒绝加载。 ");
+    }
+
+    return {
+      repo: input.repo,
+      base,
+      head,
+      status: data.status,
+      aheadBy: data.ahead_by,
+      behindBy: data.behind_by,
+      totalCommits: data.total_commits,
+      files: (data.files ?? []).map((file) => ({
+        path: file.filename,
+        status: normalizeDiffStatus(file.status),
+        additions: file.additions ?? 0,
+        deletions: file.deletions ?? 0,
+        changes: file.changes ?? (file.additions ?? 0) + (file.deletions ?? 0),
+        ...(file.patch === undefined ? {} : { patch: file.patch }),
+        ...(file.previous_filename === undefined ? {} : { previousPath: file.previous_filename }),
+      })),
     };
   }
 
@@ -315,6 +384,13 @@ function contentsEndpoint(repo: RepoRef, path: string, ref: string): string {
 
 function encodeSegment(value: string): string {
   return encodeURIComponent(value);
+}
+
+function normalizeDiffStatus(status: string): DiffFileStatus {
+  if (status === "added" || status === "modified" || status === "removed" || status === "renamed") {
+    return status;
+  }
+  return "modified";
 }
 
 function normalizeEntryType(type: string): TreeEntry["type"] {

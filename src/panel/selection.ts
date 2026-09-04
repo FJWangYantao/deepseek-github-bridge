@@ -13,7 +13,7 @@ export function appendSelectedItem(
         item.type === contextItem.type &&
         item.repo === contextItem.repo &&
         item.ref === contextItem.ref,
-    ) && contextItem.type === "tree"
+    ) && (contextItem.type === "tree" || contextItem.type === "diff")
   ) {
     return items;
   }

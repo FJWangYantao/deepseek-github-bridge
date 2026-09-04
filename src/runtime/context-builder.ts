@@ -1,7 +1,7 @@
 import { DEFAULT_CONTEXT_LIMITS } from "../shared/constants";
-import type { FileContent, RepositoryTree } from "../shared/types";
+import type { DiffFile, FileContent, RepositoryDiff, RepositoryTree } from "../shared/types";
 
-export type ContextItemType = "file" | "tree";
+export type ContextItemType = "file" | "tree" | "diff";
 
 export interface ContextSource {
   repo: string;
@@ -28,11 +28,28 @@ export interface ContextTree {
   entries: RepositoryTree["entries"];
 }
 
-export type ContextItem = ContextFile | ContextTree;
+export interface ContextDiff {
+  type: "diff";
+  source: ContextSource;
+  repo: string;
+  ref: string;
+  base: string;
+  head: string;
+  status: string;
+  aheadBy: number;
+  behindBy: number;
+  totalCommits: number;
+  files: DiffFile[];
+}
+
+export type ContextItem = ContextFile | ContextTree | ContextDiff;
 
 export interface ContextLimits {
   maxFiles: number;
   maxItems?: number;
+  maxDiffFiles?: number;
+  warnDiffCharacters?: number;
+  maxDiffCharacters?: number;
   warnFileCharacters: number;
   maxFileCharacters: number;
   maxTotalCharacters: number;
@@ -75,6 +92,7 @@ function renderContext(items: ContextItem[]): string {
   const repositoryNames = [...new Set(items.map((item) => item.repo))];
   const files = items.filter((item): item is ContextFile => item.type === "file");
   const trees = items.filter((item): item is ContextTree => item.type === "tree");
+  const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
   const header = [
     "## GitHub context",
     "",
@@ -85,6 +103,7 @@ function renderContext(items: ContextItem[]): string {
   ];
 
   const sections = [
+    ...diffs.map(renderDiff),
     ...trees.map(renderTree),
     ...files.map(renderFile),
   ];
@@ -103,6 +122,39 @@ function renderFile(file: ContextFile): string {
     `${fence}${language ?? "text"}`,
     file.content,
     fence,
+  ].join("\n");
+}
+
+function renderDiff(diff: ContextDiff): string {
+  const additions = diff.files.reduce((total, file) => total + file.additions, 0);
+  const deletions = diff.files.reduce((total, file) => total + file.deletions, 0);
+  const changedFiles = diff.files
+    .map((file) => `- ${file.status === "renamed" && file.previousPath ? `${file.previousPath} → ` : ""}${file.path}`)
+    .join("\n");
+  const patch = diff.files
+    .map((file) => {
+      if (file.patch !== undefined) return `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n${file.patch}`;
+      return `diff --git a/${file.previousPath ?? file.path} b/${file.path}\n# Patch omitted by GitHub (${file.status}; +${file.additions} -${file.deletions})`;
+    })
+    .join("\n");
+  return [
+    "Context item: Git diff",
+    `Repository: \`${diff.repo}\``,
+    `Base: \`${diff.base}\``,
+    `Head: \`${diff.head}\``,
+    `Status: \`${diff.status}\``,
+    `Files changed: ${diff.files.length}`,
+    `Additions: ${additions}`,
+    `Deletions: ${deletions}`,
+    `Commits ahead: ${diff.aheadBy}`,
+    `Commits behind: ${diff.behindBy}`,
+    "",
+    "Changed files:",
+    changedFiles || "- (none)",
+    "",
+    "```diff",
+    patch || "# No patch returned by GitHub.",
+    "```",
   ].join("\n");
 }
 
@@ -154,13 +206,41 @@ export function contextTreeFromGitHub(tree: RepositoryTree): ContextTree {
   };
 }
 
+export function contextDiffFromGitHub(diff: RepositoryDiff): ContextDiff {
+  return {
+    type: "diff",
+    source: {
+      repo: `${diff.repo.owner}/${diff.repo.name}`,
+      ref: diff.head,
+    },
+    repo: `${diff.repo.owner}/${diff.repo.name}`,
+    ref: diff.head,
+    base: diff.base,
+    head: diff.head,
+    status: diff.status,
+    aheadBy: diff.aheadBy,
+    behindBy: diff.behindBy,
+    totalCommits: diff.totalCommits,
+    files: diff.files,
+  };
+}
+
 export function getContextStats(
   items: ContextItem[],
   limits: ContextLimits = DEFAULT_CONTEXT_LIMITS,
 ): ContextStats {
   const warnings: string[] = [];
   const files = items.filter((item): item is ContextFile => item.type === "file");
-  const totalCharacters = files.reduce((total, file) => total + file.content.length, 0);
+  const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
+  const totalCharacters = files.reduce((total, file) => total + file.content.length, 0) +
+    diffs.reduce((total, diff) => total + diff.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0), 0);
+  for (const diff of diffs) {
+    const diffCharacters = diff.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+    const warnDiffCharacters = limits.warnDiffCharacters ?? 40_000;
+    if (diffCharacters > warnDiffCharacters) {
+      warnings.push(`Diff ${diff.base}...${diff.head} 较大（${diffCharacters.toLocaleString()} 字符）。`);
+    }
+  }
   for (const file of files) {
     if (file.content.length > limits.warnFileCharacters) {
       warnings.push(`${file.path} 较大（${file.content.length.toLocaleString()} 字符）。`);
@@ -188,6 +268,7 @@ export function validateContextItems(
   limits: ContextLimits = DEFAULT_CONTEXT_LIMITS,
 ): void {
   const files = items.filter((item): item is ContextFile => item.type === "file");
+  const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
   if (items.length === 0) {
     throw new ContextBuildError("NO_FILES", "请至少选择一个上下文项。 ");
   }
@@ -205,7 +286,25 @@ export function validateContextItems(
     );
   }
 
+  const maxDiffFiles = limits.maxDiffFiles ?? 50;
+  const maxDiffCharacters = limits.maxDiffCharacters ?? 100_000;
   let totalCharacters = 0;
+  for (const diff of diffs) {
+    const diffCharacters = diff.files.reduce((total, file) => total + (file.patch?.length ?? 0), 0);
+    if (diff.files.length > maxDiffFiles) {
+      throw new ContextBuildError(
+        "TOO_MANY_FILES",
+        `比较结果包含 ${diff.files.length} 个文件，超过 Diff 上限 ${maxDiffFiles} 个。`,
+      );
+    }
+    if (diffCharacters > maxDiffCharacters) {
+      throw new ContextBuildError(
+        "TOTAL_TOO_LARGE",
+        `Diff 约 ${diffCharacters.toLocaleString()} 字符，超过限制 ${maxDiffCharacters.toLocaleString()}。`,
+      );
+    }
+    totalCharacters += diffCharacters;
+  }
   for (const file of files) {
     if (isLikelyBinary(file.content)) {
       throw new ContextBuildError(

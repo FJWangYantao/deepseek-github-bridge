@@ -102,6 +102,40 @@ describe("GitHubClient", () => {
     });
   });
 
+  it("maps branch comparison results and preserves omitted patches", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/repos/octo/demo/compare/main...feature%2Ffoo");
+      return response({
+        status: "ahead",
+        ahead_by: 2,
+        behind_by: 0,
+        total_commits: 2,
+        files: [
+          { filename: "src/new.ts", status: "added", additions: 4, deletions: 0, changes: 4, patch: "@@ -0,0 +1,4 @@" },
+          { filename: "assets/bundle.js", status: "modified", additions: 12, deletions: 3, changes: 15 },
+          { filename: "src/old.ts", previous_filename: "src/renamed.ts", status: "renamed", additions: 1, deletions: 1, changes: 2, patch: "@@" },
+        ],
+      });
+    });
+    const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
+
+    await expect(client.compareRefs({ repo: { owner: "octo", name: "demo" }, base: "main", head: "feature/foo" })).resolves.toEqual({
+      repo: { owner: "octo", name: "demo" },
+      base: "main",
+      head: "feature/foo",
+      status: "ahead",
+      aheadBy: 2,
+      behindBy: 0,
+      totalCommits: 2,
+      files: [
+        { path: "src/new.ts", status: "added", additions: 4, deletions: 0, changes: 4, patch: "@@ -0,0 +1,4 @@" },
+        { path: "assets/bundle.js", status: "modified", additions: 12, deletions: 3, changes: 15 },
+        { path: "src/old.ts", previousPath: "src/renamed.ts", status: "renamed", additions: 1, deletions: 1, changes: 2, patch: "@@" },
+      ],
+    });
+    await expect(client.compareRefs({ repo: { owner: "octo", name: "demo" }, base: "main", head: "main" })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
   it("maps code search results and rejects an empty query", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       expect(String(input)).toContain("/search/code?q=");

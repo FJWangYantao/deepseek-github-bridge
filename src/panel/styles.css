@@ -176,6 +176,24 @@ h2 { margin-bottom: 4px; font-size: 15px; letter-spacing: -.015em; }
 .search-result-path { overflow: hidden; flex: 1; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .search-result-meta { flex: 0 0 auto; color: #8b98a6; font-size: 9px; }
 .selected-tree { background: #eef5fc; }
+.selected-diff { background: #f1f7ef; }
+.diff-tools { display: grid; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #edf0f3; }
+.development-heading { display: flex; align-items: center; justify-content: space-between; color: #596a7d; font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.context-chip { padding: 3px 5px; border-radius: 5px; color: #4d7c55; background: #e9f5e8; font-size: 8px; }
+.diff-branch-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; }
+.diff-arrow { color: #9da8b4; font-size: 12px; }
+.diff-load-button { width: 100%; }
+.diff-results { display: grid; gap: 6px; padding: 7px; border-radius: 9px; background: #f6f9f5; }
+.diff-summary { display: flex; align-items: center; gap: 9px; color: #5f6d7a; font-size: 10px; }
+.diff-summary strong { margin-right: auto; }
+.diff-additions { color: #31834b; font-family: ui-monospace, monospace; font-size: 10px; }
+.diff-deletions { color: #b45c5c; font-family: ui-monospace, monospace; font-size: 10px; }
+.diff-files { display: grid; max-height: 170px; overflow-y: auto; border-top: 1px solid #e7eee5; }
+.diff-file-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 2px; border-bottom: 1px solid #e8eee7; color: #53616f; font-size: 10px; }
+.diff-file-row input { margin: 0; accent-color: #4e8b5d; }
+.diff-file-path { overflow: hidden; flex: 1; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.diff-file-stat { flex: 0 0 auto; color: #899791; font: 9px ui-monospace, monospace; }
+.diff-add-button { justify-self: end; color: #4d8057; }
 .branch-label { flex: 0 0 auto; color: #9aa4b0; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
 .branch-select { flex: 1; min-width: 0; }
 .path-bar { display: flex; align-items: center; min-height: 32px; margin: 13px 0 5px; padding: 0 6px; overflow: auto hidden; border: 1px solid #ebedf0; border-radius: 9px; color: #6e7b8a; background: #fafbfc; font-size: 10px; white-space: nowrap; }

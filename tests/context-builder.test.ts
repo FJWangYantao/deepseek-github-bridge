@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildContext,
   ContextBuildError,
+  contextDiffFromGitHub,
   contextTreeFromGitHub,
   getContextStats,
   type ContextFile,
@@ -53,6 +54,27 @@ describe("buildContext", () => {
     expect(result).toContain("Context item: Repository tree");
     expect(result).toContain("FILE src/index.ts");
     expect(result).toContain("Context item: File");
+  });
+
+  it("renders a branch diff with metadata and an omitted patch marker", () => {
+    const result = buildContext([contextDiffFromGitHub({
+      repo: { owner: "octo", name: "demo" },
+      base: "main",
+      head: "feature/foo",
+      status: "ahead",
+      aheadBy: 2,
+      behindBy: 0,
+      totalCommits: 2,
+      files: [
+        { path: "src/index.ts", status: "modified", additions: 3, deletions: 1, changes: 4, patch: "@@ -1 +1 @@" },
+        { path: "assets/app.js", status: "modified", additions: 20, deletions: 5, changes: 25 },
+      ],
+    })]);
+    expect(result).toContain("Context item: Git diff");
+    expect(result).toContain("Base: `main`");
+    expect(result).toContain("Files changed: 2");
+    expect(result).toContain("Patch omitted by GitHub");
+    expect(result).toContain("```diff");
   });
 
   it("reports useful size statistics and warnings", () => {

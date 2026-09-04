@@ -61,6 +61,35 @@ export interface GetTreeInput {
   ref: string;
 }
 
+export type DiffFileStatus = "added" | "modified" | "removed" | "renamed";
+
+export interface DiffFile {
+  path: string;
+  status: DiffFileStatus;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+  previousPath?: string;
+}
+
+export interface CompareRefsInput {
+  repo: RepoRef;
+  base: string;
+  head: string;
+}
+
+export interface RepositoryDiff {
+  repo: RepoRef;
+  base: string;
+  head: string;
+  status: string;
+  aheadBy: number;
+  behindBy: number;
+  totalCommits: number;
+  files: DiffFile[];
+}
+
 export interface CodeSearchTextMatch {
   fragment: string;
   matches: Array<{ text: string; indices: number[] }>;
@@ -131,6 +160,7 @@ export interface MessagePayloadMap {
   "github:listRepositories": undefined;
   "github:listBranches": { repo: RepoRef };
   "github:getTree": GetTreeInput;
+  "github:compareRefs": CompareRefsInput;
   "github:searchCode": SearchCodeInput;
   "github:listDirectory": ListDirectoryInput;
   "github:readFile": ReadFileInput;
@@ -145,6 +175,7 @@ export interface MessageResponseMap {
   "github:listRepositories": Repository[];
   "github:listBranches": Branch[];
   "github:getTree": RepositoryTree;
+  "github:compareRefs": RepositoryDiff;
   "github:searchCode": CodeSearchResult[];
   "github:listDirectory": TreeEntry[];
   "github:readFile": FileContent;

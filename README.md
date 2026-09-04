@@ -9,7 +9,7 @@
 - DeepSeek 内容脚本只负责页面识别和输入框 DOM 适配，支持 `textarea`、`contenteditable` 和 `role=textbox` 候选，并通过原生 setter 触发 React 输入事件。
 - 后台 Service Worker 负责类型化消息路由和所有 GitHub API 请求。
 - GitHub 客户端支持仓库、分支、目录和 UTF-8 文本文件读取，并统一处理鉴权、限流、无权限、网络和二进制文件错误。
-- 侧边栏支持仓库/分支选择、目录导航、多文件选择、仓库目录树、代码搜索、文件大小与总上下文限制、Markdown 预览和手动附加。
+- 侧边栏支持仓库/分支选择、目录导航、多文件选择、仓库目录树、代码搜索、分支 Diff、文件大小与总上下文限制、Markdown 预览和手动附加。
 - Token 只存在扩展的 `chrome.storage.local`，不会传入网页 JavaScript 或日志。
 
 ## 本地开发
@@ -57,6 +57,10 @@ npm run dev
 - **搜索代码或符号**：输入关键词搜索当前仓库的 GitHub Code Search 结果，点击结果即可读取文件并加入上下文。搜索接口使用 GitHub 的索引范围，不承诺针对所选非默认分支搜索；加入结果后仍按当前选择的仓库和分支读取文件。
 
 目录树和文件可以同时选择，最终统一在 Markdown 预览中检查，再点击“附加到 DeepSeek”。搜索使用 GitHub 的代码索引，通常面向默认分支；如果需要严格查看当前分支内容，仍应通过目录浏览选择文件。
+
+## V0.3 · Branch Diff Context
+
+当前已加入只读的分支比较上下文：选择 `Base branch` 和 `Compare branch`，加载 GitHub Compare API 返回的变更文件，按文件勾选后点击 `Add Diff to Context`。Diff 预览包含比较元数据、变更文件清单、增删统计和 patch；GitHub 未返回 patch 的文件会明确标记为 `Patch omitted by GitHub`。整个流程不会写入 GitHub，也不会自动发送 DeepSeek 消息。
 
 ## 手动验收重点
 

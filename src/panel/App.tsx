@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../github/errors";
 import {
   buildContext,
+  contextDiffFromGitHub,
   contextFileFromGitHub,
   contextTreeFromGitHub,
   getContextStats,
@@ -14,6 +15,7 @@ import type {
   AuthStatus,
   Branch,
   CodeSearchResult,
+  RepositoryDiff,
   DeepSeekStatus,
   Repository,
   TreeEntry,
@@ -42,11 +44,17 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<CodeSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [baseBranch, setBaseBranch] = useState("");
+  const [headBranch, setHeadBranch] = useState("");
+  const [repositoryDiff, setRepositoryDiff] = useState<RepositoryDiff | null>(null);
+  const [loadingDiff, setLoadingDiff] = useState(false);
+  const [selectedDiffPaths, setSelectedDiffPaths] = useState<Set<string>>(() => new Set());
   const selectedItemsRef = useRef<ContextItem[]>([]);
   const pendingFilesRef = useRef<Map<string, symbol>>(new Map());
   const selectionVersionRef = useRef(0);
   const treeRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
+  const diffRequestRef = useRef(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -162,6 +170,7 @@ export default function App() {
     selectionVersionRef.current += 1;
     treeRequestRef.current += 1;
     searchRequestRef.current += 1;
+    diffRequestRef.current += 1;
     setLoadingTree(false);
     setSearching(false);
     selectedItemsRef.current = [];
@@ -171,6 +180,10 @@ export default function App() {
     setRepositoryTree(null);
     setSearchQuery("");
     setSearchResults([]);
+    setBaseBranch("");
+    setHeadBranch("");
+    setRepositoryDiff(null);
+    setSelectedDiffPaths(new Set());
     setPath("");
     setEntries([]);
   }, [repoKey, branchName]);
@@ -236,9 +249,14 @@ export default function App() {
       setRepositoryTree(null);
       setSearchQuery("");
       setSearchResults([]);
+      setBaseBranch("");
+      setHeadBranch("");
+      setRepositoryDiff(null);
+      setSelectedDiffPaths(new Set());
       selectionVersionRef.current += 1;
       treeRequestRef.current += 1;
       searchRequestRef.current += 1;
+      diffRequestRef.current += 1;
       setLoadingTree(false);
       setSearching(false);
       selectedItemsRef.current = [];
@@ -293,6 +311,59 @@ export default function App() {
     } finally {
       if (treeRequestRef.current === requestId) setLoadingTree(false);
     }
+  }
+
+  async function loadDiff() {
+    if (!selectedRepository || !baseBranch || !headBranch || baseBranch === headBranch) return;
+    const selectionVersion = selectionVersionRef.current;
+    const diffRepository = selectedRepository;
+    const base = baseBranch;
+    const head = headBranch;
+    const requestId = ++diffRequestRef.current;
+    setLoadingDiff(true);
+    setError("");
+    try {
+      const diff = await requestBridge({
+        type: "github:compareRefs",
+        payload: { repo: diffRepository, base, head },
+      });
+      if (
+        selectionVersionRef.current !== selectionVersion ||
+        diffRequestRef.current !== requestId ||
+        selectedRepository?.fullName !== diffRepository.fullName ||
+        branchName !== head
+      ) return;
+      setRepositoryDiff(diff);
+      setSelectedDiffPaths(new Set(diff.files.map((file) => file.path)));
+    } catch (loadError) {
+      if (selectionVersionRef.current === selectionVersion && diffRequestRef.current === requestId) setError(errorMessage(loadError));
+    } finally {
+      if (diffRequestRef.current === requestId) setLoadingDiff(false);
+    }
+  }
+
+  function toggleDiffPath(path: string) {
+    setSelectedDiffPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function addDiffToContext() {
+    if (!repositoryDiff) return;
+    const selectedFiles = repositoryDiff.files.filter((file) => selectedDiffPaths.has(file.path));
+    if (selectedFiles.length === 0) {
+      setError("请至少选择一个 Diff 文件。 ");
+      return;
+    }
+    const nextDiff = { ...repositoryDiff, files: selectedFiles };
+    const contextDiff = contextDiffFromGitHub(nextDiff);
+    const nextItems = appendSelectedItem(selectedItemsRef.current, contextDiff);
+    selectedItemsRef.current = nextItems;
+    setSelectedItems(nextItems);
+    setNotice(`已加入 ${selectedFiles.length} 个 Diff 文件。`);
   }
 
   async function searchRepository() {
@@ -578,6 +649,32 @@ export default function App() {
                       {loadingTree ? "读取目录树…" : repositoryTree ? "移除目录树" : "加入目录树"}
                     </button>
                   </div>
+                  <div className="diff-tools">
+                    <div className="development-heading"><span>Development Context</span><span className="context-chip">DIFF</span></div>
+                    <div className="diff-branch-row">
+                      <select className="select-input" value={baseBranch} onChange={(event) => setBaseBranch(event.target.value)} aria-label="Diff base branch">
+                        <option value="">Base branch</option>
+                        {branches.map((branch) => <option value={branch.name} key={`base:${branch.name}`}>{branch.name}</option>)}
+                      </select>
+                      <span className="diff-arrow">→</span>
+                      <select className="select-input" value={headBranch} onChange={(event) => setHeadBranch(event.target.value)} aria-label="Diff compare branch">
+                        <option value="">Compare branch</option>
+                        {branches.map((branch) => <option value={branch.name} key={`head:${branch.name}`}>{branch.name}</option>)}
+                      </select>
+                    </div>
+                    <button className="secondary-button diff-load-button" type="button" onClick={() => void loadDiff()} disabled={loadingDiff || !baseBranch || !headBranch || baseBranch === headBranch}>
+                      {loadingDiff ? "加载 Diff…" : "加载 Diff"}
+                    </button>
+                    {repositoryDiff && (
+                      <div className="diff-results">
+                        <div className="diff-summary"><strong>{repositoryDiff.files.length} files changed</strong><span className="diff-additions">+{repositoryDiff.files.reduce((total, file) => total + file.additions, 0)}</span><span className="diff-deletions">−{repositoryDiff.files.reduce((total, file) => total + file.deletions, 0)}</span></div>
+                        <div className="diff-files">
+                          {repositoryDiff.files.map((file) => <label className="diff-file-row" key={`${file.status}:${file.path}`}><input type="checkbox" checked={selectedDiffPaths.has(file.path)} onChange={() => toggleDiffPath(file.path)} /><span className="diff-file-path">{file.path}</span><span className="diff-file-stat">+{file.additions} −{file.deletions}</span></label>)}
+                        </div>
+                        <button className="text-button diff-add-button" type="button" onClick={addDiffToContext} disabled={selectedDiffPaths.size === 0}>Add Diff to Context</button>
+                      </div>
+                    )}
+                  </div>
                   {searchResults.length > 0 && (
                     <div className="search-results">
                       <div className="search-results-heading"><span>搜索结果</span><span>{searchResults.length}</span></div>
@@ -648,7 +745,7 @@ export default function App() {
               <div>
                 <p className="eyebrow">02 · REVIEW BEFORE INSERT</p>
                 <h2>待附加上下文</h2>
-                <p className="context-subtitle">文件、目录树与搜索结果会一起发送</p>
+                <p className="context-subtitle">文件、目录树与 Diff 会一起发送</p>
               </div>
               <span className="count-badge">{contextState.stats.itemCount} items</span>
             </div>
@@ -661,6 +758,13 @@ export default function App() {
             ) : (
               <>
                 <div className="selected-list">
+                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "diff" }> => item.type === "diff").map((diff) => (
+                    <div className="selected-file selected-diff" key={`${diff.repo}:${diff.base}:${diff.head}`}>
+                      <span className="file-type">DIFF</span>
+                      <span className="selected-file-name" title={`${diff.repo}/${diff.base}...${diff.head}`}>{diff.base}...{diff.head} · {diff.files.length} files</span>
+                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== diff); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); }} aria-label="移除 Diff">×</button>
+                    </div>
+                  ))}
                   {selectedItems.filter((item): item is Extract<ContextItem, { type: "tree" }> => item.type === "tree").map((tree) => (
                     <div className="selected-file selected-tree" key={`${tree.repo}:${tree.ref}:${tree.sha}`}>
                       <span className="file-type">TREE</span>

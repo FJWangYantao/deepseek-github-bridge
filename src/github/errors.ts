@@ -11,6 +11,7 @@ export type GitHubErrorCode =
   | "INVALID_RESPONSE"
   | "BINARY_FILE"
   | "FILE_TOO_LARGE"
+  | "DIFF_TOO_LARGE"
   | "UNKNOWN";
 
 export class GitHubApiError extends Error {
