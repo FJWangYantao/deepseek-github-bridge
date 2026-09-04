@@ -1,12 +1,16 @@
 import { GITHUB_API_BASE, GITHUB_API_VERSION } from "../shared/constants";
 import type {
   Branch,
+  CodeSearchResult,
   FileContent,
+  GetTreeInput,
   GitHubUser,
   ListDirectoryInput,
   ReadFileInput,
   RepoRef,
   Repository,
+  RepositoryTree,
+  SearchCodeInput,
   TreeEntry,
 } from "../shared/types";
 import { BridgeOperationError, GitHubApiError } from "./errors";
@@ -25,6 +29,35 @@ interface GitHubRepositoryResponse {
 interface GitHubBranchResponse {
   name: string;
   protected: boolean;
+}
+
+interface GitHubTreeResponse {
+  sha: string;
+  truncated: boolean;
+  tree: Array<{
+    path: string;
+    mode: string;
+    type: string;
+    sha: string;
+    size?: number;
+    url?: string;
+  }>;
+}
+
+interface GitHubCodeSearchResponse {
+  total_count: number;
+  incomplete_results: boolean;
+  items: Array<{
+    name: string;
+    path: string;
+    sha: string;
+    html_url: string;
+    repository: { full_name: string };
+    text_matches?: Array<{
+      fragment: string;
+      matches: Array<{ text: string; indices: number[] }>;
+    }>;
+  }>;
 }
 
 interface GitHubContentResponse {
@@ -92,6 +125,58 @@ export class GitHubClient {
     }
 
     return branches;
+  }
+
+  async getTree(input: GetTreeInput): Promise<RepositoryTree> {
+    const owner = encodeSegment(input.repo.owner);
+    const name = encodeSegment(input.repo.name);
+    const ref = encodeURIComponent(input.ref);
+    const data = await this.request<GitHubTreeResponse>(
+      `/repos/${owner}/${name}/git/trees/${ref}?recursive=1`,
+    );
+    if (!Array.isArray(data.tree) || typeof data.sha !== "string") {
+      throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的仓库树数据格式不正确。");
+    }
+
+    return {
+      repo: input.repo,
+      ref: input.ref,
+      sha: data.sha,
+      truncated: Boolean(data.truncated),
+      entries: data.tree
+        .filter((entry) => entry.type === "blob" || entry.type === "tree")
+        .map((entry) => ({
+          path: entry.path,
+          mode: entry.mode,
+          type: entry.type as "blob" | "tree",
+          sha: entry.sha,
+          ...(entry.size === undefined ? {} : { size: entry.size }),
+          ...(entry.url === undefined ? {} : { url: entry.url }),
+        })),
+    };
+  }
+
+  async searchCode(input: SearchCodeInput): Promise<CodeSearchResult[]> {
+    const query = input.query.trim();
+    if (!query) {
+      throw new GitHubApiError("VALIDATION_FAILED", "请输入要搜索的代码关键词。");
+    }
+    const search = encodeURIComponent(`${query} repo:${input.repo.owner}/${input.repo.name}`);
+    const data = await this.request<GitHubCodeSearchResponse>(
+      `/search/code?q=${search}&per_page=50`,
+      { headers: { Accept: "application/vnd.github.text-match+json" } },
+    );
+    if (!Array.isArray(data.items)) {
+      throw new GitHubApiError("INVALID_RESPONSE", "GitHub 返回的代码搜索数据格式不正确。");
+    }
+    return data.items.map((item) => ({
+      name: item.name,
+      path: item.path,
+      sha: item.sha,
+      htmlUrl: item.html_url,
+      repositoryFullName: item.repository.full_name,
+      textMatches: item.text_matches ?? [],
+    }));
   }
 
   async listDirectory(input: ListDirectoryInput): Promise<TreeEntry[]> {

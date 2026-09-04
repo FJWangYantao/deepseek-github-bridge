@@ -161,6 +161,21 @@ h2 { margin-bottom: 4px; font-size: 15px; letter-spacing: -.015em; }
 .text-button:hover { color: #1f5599; text-decoration: underline; }
 
 .branch-row { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+.explorer-tools { margin-top: 12px; padding-top: 11px; border-top: 1px solid #edf0f3; }
+.search-row { display: flex; gap: 7px; }
+.search-input { min-width: 0; flex: 1; }
+.secondary-button { min-height: 38px; padding: 0 11px; border: 1px solid #cfd9e6; border-radius: 10px; color: #38618e; background: #f7faff; font-size: 11px; font-weight: 700; }
+.secondary-button:hover:not(:disabled) { border-color: #8caed2; background: #edf5ff; }
+.explorer-actions { display: flex; justify-content: flex-end; min-height: 25px; padding-top: 7px; }
+.text-button.is-active { color: #1f66b1; font-weight: 700; }
+.search-results { display: grid; gap: 3px; margin-top: 7px; padding: 6px; border-radius: 9px; background: #f5f8fc; }
+.search-results-heading { display: flex; justify-content: space-between; padding: 2px 4px 4px; color: #8a96a4; font-size: 9px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.search-result { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 7px 6px; border: 0; border-radius: 6px; color: #4e6178; background: transparent; text-align: left; }
+.search-result:hover:not(:disabled) { background: #eaf2fc; }
+.search-result.is-selected { color: #2b78c2; background: #edf6ff; }
+.search-result-path { overflow: hidden; flex: 1; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-meta { flex: 0 0 auto; color: #8b98a6; font-size: 9px; }
+.selected-tree { background: #eef5fc; }
 .branch-label { flex: 0 0 auto; color: #9aa4b0; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
 .branch-select { flex: 1; min-width: 0; }
 .path-bar { display: flex; align-items: center; min-height: 32px; margin: 13px 0 5px; padding: 0 6px; overflow: auto hidden; border: 1px solid #ebedf0; border-radius: 9px; color: #6e7b8a; background: #fafbfc; font-size: 10px; white-space: nowrap; }
@@ -185,6 +200,7 @@ h2 { margin-bottom: 4px; font-size: 15px; letter-spacing: -.015em; }
 .context-card { padding: 16px; }
 .context-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .context-heading h2 { margin: 0; }
+.context-subtitle { margin: 4px 0 0; color: #8995a3; font-size: 10px; }
 .count-badge { padding: 4px 7px; border-radius: 999px; color: #50729b; background: #eef4fb; font-size: 9px; font-weight: 750; }
 .context-empty { display: grid; min-height: 115px; place-items: center; align-content: center; border: 1px dashed #d8dfe8; border-radius: 11px; color: #8c98a5; text-align: center; }
 .empty-glyph { margin-bottom: 4px; color: #9fb4cc; font-size: 26px; line-height: 1; }

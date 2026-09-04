@@ -3,14 +3,17 @@ import { errorMessage } from "../github/errors";
 import {
   buildContext,
   contextFileFromGitHub,
+  contextTreeFromGitHub,
   getContextStats,
   type ContextFile,
+  type ContextItem,
 } from "../runtime/context-builder";
-import { appendSelectedFile } from "./selection";
+import { appendSelectedItem } from "./selection";
 import { requestBridge } from "../runtime/messages";
 import type {
   AuthStatus,
   Branch,
+  CodeSearchResult,
   DeepSeekStatus,
   Repository,
   TreeEntry,
@@ -28,13 +31,18 @@ export default function App() {
   const [branchName, setBranchName] = useState("");
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<TreeEntry[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<ContextFile[]>([]);
+  const [selectedItems, setSelectedItems] = useState<ContextItem[]>([]);
   const [connecting, setConnecting] = useState(false);
   const [loadingRepositories, setLoadingRepositories] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [loadingDirectory, setLoadingDirectory] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<Set<string>>(() => new Set());
-  const selectedFilesRef = useRef<ContextFile[]>([]);
+  const [repositoryTree, setRepositoryTree] = useState<ContextItem | null>(null);
+  const [loadingTree, setLoadingTree] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CodeSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const selectedItemsRef = useRef<ContextItem[]>([]);
   const pendingFilesRef = useRef<Map<string, symbol>>(new Map());
   const selectionVersionRef = useRef(0);
   const [error, setError] = useState("");
@@ -46,27 +54,27 @@ export default function App() {
   );
 
   const contextState = useMemo(() => {
-    if (selectedFiles.length === 0) {
+    if (selectedItems.length === 0) {
       return {
         text: "",
-        stats: { fileCount: 0, totalCharacters: 0, estimatedCharacters: 0, warnings: [] },
+        stats: { itemCount: 0, fileCount: 0, totalCharacters: 0, estimatedCharacters: 0, warnings: [] },
         error: "",
       };
     }
     try {
       return {
-        text: buildContext(selectedFiles),
-        stats: getContextStats(selectedFiles),
+        text: buildContext(selectedItems),
+        stats: getContextStats(selectedItems),
         error: "",
       };
     } catch (contextError) {
       return {
         text: "",
-        stats: getContextStatsWithoutBuild(selectedFiles),
+        stats: getContextStatsWithoutBuild(selectedItems),
         error: errorMessage(contextError),
       };
     }
-  }, [selectedFiles]);
+  }, [selectedItems]);
 
   const refreshDeepSeek = useCallback(async (showError = false) => {
     try {
@@ -150,10 +158,13 @@ export default function App() {
 
   useEffect(() => {
     selectionVersionRef.current += 1;
-    selectedFilesRef.current = [];
+    selectedItemsRef.current = [];
     pendingFilesRef.current.clear();
     setPendingFiles(new Set());
-    setSelectedFiles([]);
+    setSelectedItems([]);
+    setRepositoryTree(null);
+    setSearchQuery("");
+    setSearchResults([]);
     setPath("");
     setEntries([]);
   }, [repoKey, branchName]);
@@ -216,31 +227,99 @@ export default function App() {
       setBranches([]);
       setBranchName("");
       setEntries([]);
+      setRepositoryTree(null);
+      setSearchQuery("");
+      setSearchResults([]);
       selectionVersionRef.current += 1;
-      selectedFilesRef.current = [];
+      selectedItemsRef.current = [];
       pendingFilesRef.current.clear();
       setPendingFiles(new Set());
-      setSelectedFiles([]);
+      setSelectedItems([]);
       setNotice("已断开 GitHub，扩展存储中的 Token 已清除。 ");
     } catch (disconnectError) {
       setError(errorMessage(disconnectError));
     }
   }
 
+  async function toggleRepositoryTree() {
+    if (!selectedRepository || !branchName) return;
+    if (repositoryTree) {
+      const nextItems = selectedItemsRef.current.filter((item) => item !== repositoryTree);
+      selectedItemsRef.current = nextItems;
+      setSelectedItems(nextItems);
+      setRepositoryTree(null);
+      return;
+    }
+
+    setLoadingTree(true);
+    setError("");
+    try {
+      const tree = contextTreeFromGitHub(
+        await requestBridge({
+          type: "github:getTree",
+          payload: { repo: selectedRepository, ref: branchName },
+        }),
+      );
+      const nextItems = appendSelectedItem(selectedItemsRef.current, tree);
+      selectedItemsRef.current = nextItems;
+      setSelectedItems(nextItems);
+      setRepositoryTree(tree);
+      setNotice("已加入仓库目录树。");
+    } catch (loadError) {
+      setError(errorMessage(loadError));
+    } finally {
+      setLoadingTree(false);
+    }
+  }
+
+  async function searchRepository() {
+    if (!selectedRepository || !branchName || !searchQuery.trim()) return;
+    setSearching(true);
+    setError("");
+    try {
+      setSearchResults(
+        await requestBridge({
+          type: "github:searchCode",
+          payload: {
+            repo: selectedRepository,
+            ref: branchName,
+            query: searchQuery,
+          },
+        }),
+      );
+    } catch (searchError) {
+      setError(errorMessage(searchError));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function addSearchResult(result: CodeSearchResult) {
+    const entry: TreeEntry = {
+      name: result.name,
+      path: result.path,
+      type: "file",
+      sha: result.sha,
+      htmlUrl: result.htmlUrl,
+    };
+    await toggleFile(entry);
+  }
+
   async function toggleFile(entry: TreeEntry) {
     if (!selectedRepository || !branchName || entry.type !== "file") return;
 
     const selectionKey = `${selectedRepository.fullName}:${branchName}:${entry.path}`;
-    const existing = selectedFilesRef.current.find(
-      (file) =>
-        file.repo === selectedRepository.fullName &&
-        file.ref === branchName &&
-        file.path === entry.path,
+    const existing = selectedItemsRef.current.find(
+      (item) =>
+        item.type === "file" &&
+        item.repo === selectedRepository.fullName &&
+        item.ref === branchName &&
+        item.path === entry.path,
     );
     if (existing) {
-      const nextFiles = selectedFilesRef.current.filter((file) => file !== existing);
-      selectedFilesRef.current = nextFiles;
-      setSelectedFiles(nextFiles);
+      const nextItems = selectedItemsRef.current.filter((item) => item !== existing);
+      selectedItemsRef.current = nextItems;
+      setSelectedItems(nextItems);
       return;
     }
     if (pendingFilesRef.current.has(selectionKey)) return;
@@ -263,9 +342,9 @@ export default function App() {
       const contextFile = contextFileFromGitHub(file);
       // Use the ref as the authoritative latest selection. Each async response
       // appends to the current value, instead of the render that started it.
-      const nextFiles = appendSelectedFile(selectedFilesRef.current, contextFile);
-      selectedFilesRef.current = nextFiles;
-      setSelectedFiles(nextFiles);
+      const nextItems = appendSelectedItem(selectedItemsRef.current, contextFile);
+      selectedItemsRef.current = nextItems;
+      setSelectedItems(nextItems);
       setNotice(`已加载 ${entry.path}。`);
     } catch (loadError) {
       setError(errorMessage(loadError));
@@ -445,6 +524,40 @@ export default function App() {
                   })}
                 </div>
 
+                <div className="explorer-tools">
+                  <form className="search-row" onSubmit={(event) => { event.preventDefault(); void searchRepository(); }}>
+                    <input
+                      className="text-input search-input"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder="搜索代码或符号"
+                      aria-label="搜索代码或符号"
+                    />
+                    <button className="secondary-button" type="submit" disabled={searching || !searchQuery.trim()}>
+                      {searching ? "…" : "搜索"}
+                    </button>
+                  </form>
+                  <div className="explorer-actions">
+                    <button className={`text-button ${repositoryTree ? "is-active" : ""}`} type="button" onClick={() => void toggleRepositoryTree()} disabled={loadingTree}>
+                      {loadingTree ? "读取目录树…" : repositoryTree ? "移除目录树" : "加入目录树"}
+                    </button>
+                  </div>
+                  {searchResults.length > 0 && (
+                    <div className="search-results">
+                      <div className="search-results-heading"><span>搜索结果</span><span>{searchResults.length}</span></div>
+                      {searchResults.map((result) => {
+                        const selected = selectedItems.some((item) => item.type === "file" && item.path === result.path && item.repo === selectedRepository.fullName && item.ref === branchName);
+                        return (
+                          <button className={`search-result ${selected ? "is-selected" : ""}`} type="button" key={`${result.path}:${result.sha}`} onClick={() => void addSearchResult(result)} disabled={selected}>
+                            <span className="search-result-path">{result.path}</span>
+                            <span className="search-result-meta">{selected ? "已加入" : "加入上下文"}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="tree-toolbar">
                   <span>{path || "根目录"}</span>
                   {path && <button className="text-button" type="button" onClick={() => setPath(parentPath(path))}>返回上级</button>}
@@ -456,11 +569,12 @@ export default function App() {
                     <div className="empty-state">这个目录是空的。</div>
                   ) : (
                     entries.map((entry) => {
-                      const isSelected = selectedFiles.some(
-                        (file) =>
-                          file.repo === selectedRepository.fullName &&
-                          file.ref === branchName &&
-                          file.path === entry.path,
+                      const isSelected = selectedItems.some(
+                        (item) =>
+                          item.type === "file" &&
+                          item.repo === selectedRepository.fullName &&
+                          item.ref === branchName &&
+                          item.path === entry.path,
                       );
                       const isPending = pendingFiles.has(
                         `${selectedRepository.fullName}:${branchName}:${entry.path}`,
@@ -498,10 +612,11 @@ export default function App() {
               <div>
                 <p className="eyebrow">02 · REVIEW BEFORE INSERT</p>
                 <h2>待附加上下文</h2>
+                <p className="context-subtitle">文件、目录树与搜索结果会一起发送</p>
               </div>
-              <span className="count-badge">{contextState.stats.fileCount} files</span>
+              <span className="count-badge">{contextState.stats.itemCount} items</span>
             </div>
-            {selectedFiles.length === 0 ? (
+            {selectedItems.length === 0 ? (
               <div className="context-empty">
                 <span className="empty-glyph">⌁</span>
                 <p>从上面的文件树选择源文件。</p>
@@ -510,7 +625,14 @@ export default function App() {
             ) : (
               <>
                 <div className="selected-list">
-                  {selectedFiles.map((file) => (
+                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "tree" }> => item.type === "tree").map((tree) => (
+                    <div className="selected-file selected-tree" key={`${tree.repo}:${tree.ref}:${tree.sha}`}>
+                      <span className="file-type">TREE</span>
+                      <span className="selected-file-name" title={`${tree.repo}/${tree.ref}`}>仓库目录树 · {tree.entries.length} entries</span>
+                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== tree); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); setRepositoryTree(null); }} aria-label="移除仓库目录树">×</button>
+                    </div>
+                  ))}
+                  {selectedItems.filter((item): item is ContextFile => item.type === "file").map((file) => (
                     <div className="selected-file" key={`${file.repo}:${file.ref}:${file.path}`}>
                       <span className="file-type">{(file.language ?? "TXT").slice(0, 4).toUpperCase()}</span>
                       <span className="selected-file-name" title={`${file.repo}/${file.path}`}>{file.path}</span>
@@ -518,9 +640,9 @@ export default function App() {
                         className="remove-file"
                         type="button"
                         onClick={() => {
-                          const nextFiles = selectedFilesRef.current.filter((item) => item !== file);
-                          selectedFilesRef.current = nextFiles;
-                          setSelectedFiles(nextFiles);
+                          const nextItems = selectedItemsRef.current.filter((item) => item !== file);
+                          selectedItemsRef.current = nextItems;
+                          setSelectedItems(nextItems);
                         }}
                         aria-label={`移除 ${file.path}`}
                       >×</button>
@@ -572,8 +694,10 @@ function formatBytes(bytes = 0): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getContextStatsWithoutBuild(files: ContextFile[]) {
+function getContextStatsWithoutBuild(items: ContextItem[]) {
+  const files = items.filter((item): item is ContextFile => item.type === "file");
   return {
+    itemCount: items.length,
     fileCount: files.length,
     totalCharacters: files.reduce((total, file) => total + file.content.length, 0),
     estimatedCharacters: 0,

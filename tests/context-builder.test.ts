@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   buildContext,
   ContextBuildError,
+  contextTreeFromGitHub,
   getContextStats,
   type ContextFile,
 } from "../src/runtime/context-builder";
 
 const file = (overrides: Partial<ContextFile> = {}): ContextFile => ({
+  type: "file",
+  source: { repo: "octo/demo", ref: "main" },
   repo: "octo/demo",
   ref: "main",
   path: "src/index.ts",
@@ -34,6 +37,24 @@ describe("buildContext", () => {
     expect(result).toContain("````ts");
   });
 
+  it("renders a repository tree alongside selected files", () => {
+    const tree = contextTreeFromGitHub({
+      repo: { owner: "octo", name: "demo" },
+      ref: "main",
+      sha: "tree-sha",
+      truncated: false,
+      entries: [
+        { path: "src/index.ts", mode: "100644", type: "blob", sha: "file-sha" },
+        { path: "src", mode: "040000", type: "tree", sha: "dir-sha" },
+      ],
+    });
+
+    const result = buildContext([tree, file()]);
+    expect(result).toContain("Context item: Repository tree");
+    expect(result).toContain("FILE src/index.ts");
+    expect(result).toContain("Context item: File");
+  });
+
   it("reports useful size statistics and warnings", () => {
     const result = getContextStats([file({ content: "x".repeat(60) })], {
       maxFiles: 12,
@@ -41,6 +62,7 @@ describe("buildContext", () => {
       maxFileCharacters: 80,
       maxTotalCharacters: 120,
     });
+    expect(result.itemCount).toBe(1);
     expect(result.fileCount).toBe(1);
     expect(result.totalCharacters).toBe(60);
     expect(result.estimatedCharacters).toBeGreaterThan(60);

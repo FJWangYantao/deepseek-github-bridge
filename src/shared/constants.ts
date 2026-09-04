@@ -8,6 +8,7 @@ export const AUTH_STORAGE_KEY = "githubAuth";
 
 export const DEFAULT_CONTEXT_LIMITS = {
   maxFiles: 12,
+  maxItems: 13,
   warnFileCharacters: 50_000,
   maxFileCharacters: 80_000,
   maxTotalCharacters: 120_000,

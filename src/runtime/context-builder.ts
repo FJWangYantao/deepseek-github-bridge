@@ -1,7 +1,16 @@
 import { DEFAULT_CONTEXT_LIMITS } from "../shared/constants";
-import type { FileContent } from "../shared/types";
+import type { FileContent, RepositoryTree } from "../shared/types";
+
+export type ContextItemType = "file" | "tree";
+
+export interface ContextSource {
+  repo: string;
+  ref: string;
+}
 
 export interface ContextFile {
+  type: "file";
+  source: ContextSource;
   repo: string;
   ref: string;
   path: string;
@@ -9,14 +18,28 @@ export interface ContextFile {
   content: string;
 }
 
+export interface ContextTree {
+  type: "tree";
+  source: ContextSource;
+  repo: string;
+  ref: string;
+  sha: string;
+  truncated: boolean;
+  entries: RepositoryTree["entries"];
+}
+
+export type ContextItem = ContextFile | ContextTree;
+
 export interface ContextLimits {
   maxFiles: number;
+  maxItems?: number;
   warnFileCharacters: number;
   maxFileCharacters: number;
   maxTotalCharacters: number;
 }
 
 export interface ContextStats {
+  itemCount: number;
   fileCount: number;
   totalCharacters: number;
   estimatedCharacters: number;
@@ -40,44 +63,74 @@ export class ContextBuildError extends Error {
 }
 
 export function buildContext(
-  files: ContextFile[],
+  items: ContextItem[],
   limits: ContextLimits = DEFAULT_CONTEXT_LIMITS,
 ): string {
-  validateContextFiles(files, limits);
+  validateContextItems(items, limits);
 
-  return renderContext(files);
+  return renderContext(items);
 }
 
-function renderContext(files: ContextFile[]): string {
-
-  const repositoryNames = [...new Set(files.map((file) => file.repo))];
+function renderContext(items: ContextItem[]): string {
+  const repositoryNames = [...new Set(items.map((item) => item.repo))];
+  const files = items.filter((item): item is ContextFile => item.type === "file");
+  const trees = items.filter((item): item is ContextTree => item.type === "tree");
   const header = [
     "## GitHub context",
     "",
-    `The following ${files.length === 1 ? "file is" : "files are"} from GitHub ${
+    `The following ${items.length === 1 ? "context item is" : "context items are"} from GitHub ${
       repositoryNames.length === 1 ? `repository \`${repositoryNames[0]}\`` : "repositories"
     }.`,
     "",
   ];
 
-  const sections = files.map((file) => {
-    const language = file.language ?? languageFromPath(file.path);
-    const fence = "`".repeat(Math.max(3, longestBacktickRun(file.content) + 1));
-    return [
-      `File: \`${file.repo}/${file.path}\``,
-      `Ref: \`${file.ref}\``,
-      "",
-      `${fence}${language ?? "text"}`,
-      file.content,
-      fence,
-    ].join("\n");
-  });
+  const sections = [
+    ...trees.map(renderTree),
+    ...files.map(renderFile),
+  ];
 
   return [...header, sections.join("\n\n")].join("\n");
 }
 
+function renderFile(file: ContextFile): string {
+  const language = file.language ?? languageFromPath(file.path);
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(file.content) + 1));
+  return [
+    `Context item: File`,
+    `File: \`${file.repo}/${file.path}\``,
+    `Ref: \`${file.ref}\``,
+    "",
+    `${fence}${language ?? "text"}`,
+    file.content,
+    fence,
+  ].join("\n");
+}
+
+function renderTree(tree: ContextTree): string {
+  const lines = tree.entries
+    .slice()
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map((entry) => `${entry.type === "tree" ? "DIR " : "FILE"} ${entry.path}`);
+  return [
+    "Context item: Repository tree",
+    `Repository: \`${tree.repo}\``,
+    `Ref: \`${tree.ref}\``,
+    `Tree SHA: \`${tree.sha}\``,
+    tree.truncated ? "Warning: GitHub truncated this tree response." : "",
+    "",
+    "```text",
+    ...lines,
+    "```",
+  ].filter(Boolean).join("\n");
+}
+
 export function contextFileFromGitHub(file: FileContent): ContextFile {
   return {
+    type: "file",
+    source: {
+      repo: `${file.repo.owner}/${file.repo.name}`,
+      ref: file.ref,
+    },
     repo: `${file.repo.owner}/${file.repo.name}`,
     ref: file.ref,
     path: file.path,
@@ -86,11 +139,27 @@ export function contextFileFromGitHub(file: FileContent): ContextFile {
   };
 }
 
+export function contextTreeFromGitHub(tree: RepositoryTree): ContextTree {
+  return {
+    type: "tree",
+    source: {
+      repo: `${tree.repo.owner}/${tree.repo.name}`,
+      ref: tree.ref,
+    },
+    repo: `${tree.repo.owner}/${tree.repo.name}`,
+    ref: tree.ref,
+    sha: tree.sha,
+    truncated: tree.truncated,
+    entries: tree.entries,
+  };
+}
+
 export function getContextStats(
-  files: ContextFile[],
+  items: ContextItem[],
   limits: ContextLimits = DEFAULT_CONTEXT_LIMITS,
 ): ContextStats {
   const warnings: string[] = [];
+  const files = items.filter((item): item is ContextFile => item.type === "file");
   const totalCharacters = files.reduce((total, file) => total + file.content.length, 0);
   for (const file of files) {
     if (file.content.length > limits.warnFileCharacters) {
@@ -100,12 +169,13 @@ export function getContextStats(
 
   let estimatedCharacters = totalCharacters;
   try {
-    estimatedCharacters = renderContext(files).length;
+    estimatedCharacters = renderContext(items).length;
   } catch {
     // The source total is still useful when a partially selected file is invalid.
   }
 
   return {
+    itemCount: items.length,
     fileCount: files.length,
     totalCharacters,
     estimatedCharacters,
@@ -113,12 +183,20 @@ export function getContextStats(
   };
 }
 
-export function validateContextFiles(
-  files: ContextFile[],
+export function validateContextItems(
+  items: ContextItem[],
   limits: ContextLimits = DEFAULT_CONTEXT_LIMITS,
 ): void {
-  if (files.length === 0) {
-    throw new ContextBuildError("NO_FILES", "请至少选择一个文件。 ");
+  const files = items.filter((item): item is ContextFile => item.type === "file");
+  if (items.length === 0) {
+    throw new ContextBuildError("NO_FILES", "请至少选择一个上下文项。 ");
+  }
+  const maxItems = limits.maxItems ?? limits.maxFiles + 1;
+  if (items.length > maxItems) {
+    throw new ContextBuildError(
+      "TOO_MANY_FILES",
+      `最多只能同时附加 ${maxItems} 个上下文项。`,
+    );
   }
   if (files.length > limits.maxFiles) {
     throw new ContextBuildError(
@@ -152,7 +230,7 @@ export function validateContextFiles(
     );
   }
 
-  const estimatedCharacters = renderContext(files).length;
+  const estimatedCharacters = renderContext(items).length;
   if (estimatedCharacters > limits.maxTotalCharacters) {
     throw new ContextBuildError(
       "TOTAL_TOO_LARGE",

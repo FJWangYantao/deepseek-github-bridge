@@ -1,24 +1,43 @@
 import {
-  type ContextFile,
-  validateContextFiles,
+  type ContextItem,
+  validateContextItems,
 } from "../runtime/context-builder";
 
-export function appendSelectedFile(
-  files: ContextFile[],
-  contextFile: ContextFile,
-): ContextFile[] {
+export function appendSelectedItem(
+  items: ContextItem[],
+  contextItem: ContextItem,
+): ContextItem[] {
   if (
-    files.some(
-      (file) =>
-        file.repo === contextFile.repo &&
-        file.ref === contextFile.ref &&
-        file.path === contextFile.path,
+    items.some(
+      (item) =>
+        item.type === contextItem.type &&
+        item.repo === contextItem.repo &&
+        item.ref === contextItem.ref,
+    ) && contextItem.type === "tree"
+  ) {
+    return items;
+  }
+  if (
+    contextItem.type === "file" &&
+    items.some(
+      (item) =>
+        item.type === "file" &&
+        item.repo === contextItem.repo &&
+        item.ref === contextItem.ref &&
+        item.path === contextItem.path,
     )
   ) {
-    return files;
+    return items;
   }
 
-  const nextFiles = [...files, contextFile];
-  validateContextFiles(nextFiles);
-  return nextFiles;
+  const nextItems = [...items, contextItem];
+  validateContextItems(nextItems);
+  return nextItems;
+}
+
+export function appendSelectedFile(
+  files: ContextItem[],
+  contextFile: ContextItem,
+): ContextItem[] {
+  return appendSelectedItem(files, contextFile);
 }

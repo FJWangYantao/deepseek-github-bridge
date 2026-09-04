@@ -44,6 +44,10 @@ async function routeMessage(
       return success(message.type, await github.listRepositories());
     case "github:listBranches":
       return success(message.type, await github.listBranches(message.payload.repo));
+    case "github:getTree":
+      return success(message.type, await github.getTree(message.payload));
+    case "github:searchCode":
+      return success(message.type, await github.searchCode(message.payload));
     case "github:listDirectory":
       return success(message.type, await github.listDirectory(message.payload));
     case "github:readFile":

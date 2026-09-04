@@ -3,6 +3,8 @@ import { appendSelectedFile } from "../src/panel/selection";
 import type { ContextFile } from "../src/runtime/context-builder";
 
 const contextFile = (path: string): ContextFile => ({
+  type: "file",
+  source: { repo: "octo/demo", ref: "main" },
   repo: "octo/demo",
   ref: "main",
   path,

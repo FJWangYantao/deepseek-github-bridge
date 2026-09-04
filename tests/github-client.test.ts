@@ -80,6 +80,52 @@ describe("GitHubClient", () => {
     ]);
   });
 
+  it("maps the recursive repository tree response", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/git/trees/main?recursive=1");
+      return response({
+        sha: "tree-sha",
+        truncated: false,
+        tree: [
+          { path: "src", mode: "040000", type: "tree", sha: "dir-sha" },
+          { path: "src/index.ts", mode: "100644", type: "blob", sha: "file-sha", size: 12 },
+        ],
+      });
+    });
+    const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
+
+    await expect(client.getTree({ repo: { owner: "octo", name: "demo" }, ref: "main" })).resolves.toMatchObject({
+      sha: "tree-sha",
+      entries: expect.arrayContaining([
+        expect.objectContaining({ path: "src/index.ts", type: "blob" }),
+      ]),
+    });
+  });
+
+  it("maps code search results and rejects an empty query", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/search/code?q=");
+      return response({
+        total_count: 1,
+        incomplete_results: false,
+        items: [{
+          name: "auth.ts",
+          path: "src/github/auth.ts",
+          sha: "file-sha",
+          html_url: "https://github.com/octo/demo/blob/main/src/github/auth.ts",
+          repository: { full_name: "octo/demo" },
+          text_matches: [{ fragment: "getToken", matches: [{ text: "getToken", indices: [0, 8] }] }],
+        }],
+      });
+    });
+    const client = new GitHubClient({ getToken: async () => "test-token" }, fetchMock as typeof fetch);
+
+    await expect(client.searchCode({ repo: { owner: "octo", name: "demo" }, ref: "main", query: "auth" })).resolves.toEqual([
+      expect.objectContaining({ path: "src/github/auth.ts", repositoryFullName: "octo/demo" }),
+    ]);
+    await expect(client.searchCode({ repo: { owner: "octo", name: "demo" }, ref: "main", query: " " })).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
   it("normalizes authentication failures", async () => {
     const client = new GitHubClient(
       { getToken: async () => "bad-token" },

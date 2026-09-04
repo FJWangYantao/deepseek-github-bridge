@@ -39,6 +39,48 @@ export interface FileContent {
   language?: string;
 }
 
+export interface RepositoryTreeEntry {
+  path: string;
+  mode: string;
+  type: "blob" | "tree";
+  sha: string;
+  size?: number;
+  url?: string;
+}
+
+export interface RepositoryTree {
+  repo: RepoRef;
+  ref: string;
+  sha: string;
+  truncated: boolean;
+  entries: RepositoryTreeEntry[];
+}
+
+export interface GetTreeInput {
+  repo: RepoRef;
+  ref: string;
+}
+
+export interface CodeSearchTextMatch {
+  fragment: string;
+  matches: Array<{ text: string; indices: number[] }>;
+}
+
+export interface CodeSearchResult {
+  name: string;
+  path: string;
+  sha: string;
+  htmlUrl: string;
+  repositoryFullName: string;
+  textMatches: CodeSearchTextMatch[];
+}
+
+export interface SearchCodeInput {
+  repo: RepoRef;
+  ref: string;
+  query: string;
+}
+
 export interface GitHubUser {
   login: string;
   avatarUrl: string;
@@ -89,6 +131,8 @@ export interface MessagePayloadMap {
   "auth:clear": undefined;
   "github:listRepositories": undefined;
   "github:listBranches": { repo: RepoRef };
+  "github:getTree": GetTreeInput;
+  "github:searchCode": SearchCodeInput;
   "github:listDirectory": ListDirectoryInput;
   "github:readFile": ReadFileInput;
   "deepseek:ping": undefined;
@@ -101,6 +145,8 @@ export interface MessageResponseMap {
   "auth:clear": AuthStatus;
   "github:listRepositories": Repository[];
   "github:listBranches": Branch[];
+  "github:getTree": RepositoryTree;
+  "github:searchCode": CodeSearchResult[];
   "github:listDirectory": TreeEntry[];
   "github:readFile": FileContent;
   "deepseek:ping": DeepSeekStatus;

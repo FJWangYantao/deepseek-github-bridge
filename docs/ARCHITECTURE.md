@@ -32,7 +32,11 @@ Background Service Worker
 
 ### `src/runtime/`
 
-这里只保留跨模块的最小编排：类型化消息和上下文构建器。上下文构建是确定性的，负责语言标记、动态 Markdown fence、文件数量/单文件/总字符限制和二进制检测。当前没有模型驱动的工具循环。
+这里只保留跨模块的最小编排：类型化消息和上下文构建器。上下文构建是确定性的，负责将 `ContextItem`（文件或仓库树）渲染为 Markdown、动态 fence、数量/字符限制和二进制检测。当前没有模型驱动的工具循环。
+
+### V0.2 Context Explorer
+
+`GitHubClient` 通过 `getTree()` 调用递归 Git Trees API，通过 `searchCode()` 调用只读 Code Search API。面板仍然只通过类型化消息访问 GitHub，并把仓库树、搜索得到的文件和手动浏览得到的文件统一放入 `selectedItems`，再交给 Context Builder 预览和附加。GitHub Code Search 按 GitHub 的索引规则工作，结果不保证来自非默认分支；文件读取仍以用户选择的 ref 为准。
 
 ### `src/background/message-router.ts`
 
@@ -51,5 +55,5 @@ Vite 构建 React 侧边栏；`scripts/build.mjs` 使用 esbuild 将后台和内
 
 ## 后续扩展点
 
-下一步可以在不改变当前 GitHub 客户端和 DeepSeek 适配器的前提下增加文件搜索、diff 和提交信息。只有手动附加流程稳定后，才应引入 `ToolRegistry`、工具调用解析和写操作审批流。
+下一步可以在不改变当前 GitHub 客户端和 DeepSeek 适配器的前提下增加 diff 和提交信息。只有手动附加流程稳定后，才应引入 `ToolRegistry`、工具调用解析和写操作审批流。
 
