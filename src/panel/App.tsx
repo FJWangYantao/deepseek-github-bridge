@@ -11,8 +11,9 @@ import {
   type ContextFile,
   type ContextItem,
 } from "../runtime/context-builder";
-import { appendSelectedItem } from "./selection";
 import { requestBridge } from "../runtime/messages";
+import { useContextBasket } from "./hooks/useContextBasket";
+import ContextComposer from "./components/ContextComposer";
 import type {
   AuthStatus,
   Branch,
@@ -37,7 +38,14 @@ export default function App() {
   const [branchName, setBranchName] = useState("");
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<TreeEntry[]>([]);
-  const [selectedItems, setSelectedItems] = useState<ContextItem[]>([]);
+  const {
+    items: selectedItems,
+    itemsRef: selectedItemsRef,
+    addItem: addContextItem,
+    removeItem: removeContextItem,
+    moveItem: moveContextItem,
+    clear: clearContext,
+  } = useContextBasket();
   const [connecting, setConnecting] = useState(false);
   const [loadingRepositories, setLoadingRepositories] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -61,7 +69,6 @@ export default function App() {
   const [repositoryDiff, setRepositoryDiff] = useState<RepositoryDiff | null>(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [selectedDiffPaths, setSelectedDiffPaths] = useState<Set<string>>(() => new Set());
-  const selectedItemsRef = useRef<ContextItem[]>([]);
   const pendingFilesRef = useRef<Map<string, symbol>>(new Map());
   const selectionVersionRef = useRef(0);
   const treeRequestRef = useRef(0);
@@ -81,7 +88,7 @@ export default function App() {
     if (selectedItems.length === 0) {
       return {
         text: "",
-        stats: { itemCount: 0, fileCount: 0, totalCharacters: 0, estimatedCharacters: 0, warnings: [] },
+        stats: { itemCount: 0, fileCount: 0, totalCharacters: 0, estimatedCharacters: 0, estimatedTokens: 0, warnings: [] },
         error: "",
       };
     }
@@ -188,10 +195,9 @@ export default function App() {
     commitRequestRef.current += 1;
     setLoadingTree(false);
     setSearching(false);
-    selectedItemsRef.current = [];
+    clearContext();
     pendingFilesRef.current.clear();
     setPendingFiles(new Set());
-    setSelectedItems([]);
     setRepositoryTree(null);
     setSearchQuery("");
     setSearchResults([]);
@@ -288,10 +294,9 @@ export default function App() {
       pullRequestRequestRef.current += 1;
       setLoadingTree(false);
       setSearching(false);
-      selectedItemsRef.current = [];
+      clearContext();
       pendingFilesRef.current.clear();
       setPendingFiles(new Set());
-      setSelectedItems([]);
       setNotice("已断开 GitHub，扩展存储中的 Token 已清除。 ");
     } catch (disconnectError) {
       setError(errorMessage(disconnectError));
@@ -301,9 +306,7 @@ export default function App() {
   async function toggleRepositoryTree() {
     if (!selectedRepository || !branchName) return;
     if (repositoryTree) {
-      const nextItems = selectedItemsRef.current.filter((item) => item !== repositoryTree);
-      selectedItemsRef.current = nextItems;
-      setSelectedItems(nextItems);
+      removeContextItem(repositoryTree);
       setRepositoryTree(null);
       return;
     }
@@ -327,9 +330,7 @@ export default function App() {
         selectedRepository?.fullName !== treeRepository.fullName ||
         branchName !== treeRef
       ) return;
-      const nextItems = appendSelectedItem(selectedItemsRef.current, tree);
-      selectedItemsRef.current = nextItems;
-      setSelectedItems(nextItems);
+      addContextItem(tree);
       setRepositoryTree(tree);
       setNotice("已加入仓库目录树。");
     } catch (loadError) {
@@ -453,9 +454,7 @@ export default function App() {
       return;
     }
     const contextPullRequest = contextPullRequestFromGitHub({ ...repositoryPullRequest, files: selectedFiles });
-    const nextItems = appendSelectedItem(selectedItemsRef.current, contextPullRequest);
-    selectedItemsRef.current = nextItems;
-    setSelectedItems(nextItems);
+    addContextItem(contextPullRequest);
     setNotice(`已加入 ${selectedFiles.length} 个 Pull Request 文件。`);
   }
 
@@ -476,9 +475,7 @@ export default function App() {
       return;
     }
     const contextCommit = contextCommitFromGitHub({ ...repositoryCommit, files: selectedFiles });
-    const nextItems = appendSelectedItem(selectedItemsRef.current, contextCommit);
-    selectedItemsRef.current = nextItems;
-    setSelectedItems(nextItems);
+    addContextItem(contextCommit);
     setNotice(`已加入 ${selectedFiles.length} 个 Commit 文件。`);
   }
 
@@ -500,9 +497,7 @@ export default function App() {
     }
     const nextDiff = { ...repositoryDiff, files: selectedFiles };
     const contextDiff = contextDiffFromGitHub(nextDiff);
-    const nextItems = appendSelectedItem(selectedItemsRef.current, contextDiff);
-    selectedItemsRef.current = nextItems;
-    setSelectedItems(nextItems);
+    addContextItem(contextDiff);
     setNotice(`已加入 ${selectedFiles.length} 个 Diff 文件。`);
   }
 
@@ -564,9 +559,7 @@ export default function App() {
         item.path === entry.path,
     );
     if (existing) {
-      const nextItems = selectedItemsRef.current.filter((item) => item !== existing);
-      selectedItemsRef.current = nextItems;
-      setSelectedItems(nextItems);
+      removeContextItem(existing);
       return;
     }
     if (pendingFilesRef.current.has(selectionKey)) return;
@@ -589,9 +582,7 @@ export default function App() {
       const contextFile = contextFileFromGitHub(file);
       // Use the ref as the authoritative latest selection. Each async response
       // appends to the current value, instead of the render that started it.
-      const nextItems = appendSelectedItem(selectedItemsRef.current, contextFile);
-      selectedItemsRef.current = nextItems;
-      setSelectedItems(nextItems);
+      addContextItem(contextFile);
       setNotice(`已加载 ${entry.path}。`);
     } catch (loadError) {
       setError(errorMessage(loadError));
@@ -637,7 +628,7 @@ export default function App() {
     <main className="app-shell">
       <header className="app-header">
         <div>
-          <p className="eyebrow">READ-ONLY BRIDGE · V0.1</p>
+          <p className="eyebrow">READ-ONLY CONTEXT COMPOSER · V0.4</p>
           <h1>DeepSeek GitHub Bridge</h1>
         </div>
         <button className="icon-button" type="button" onClick={() => void refreshDeepSeek(true)} title="刷新 DeepSeek 状态">
@@ -910,91 +901,33 @@ export default function App() {
               <div>
                 <p className="eyebrow">02 · REVIEW BEFORE INSERT</p>
                 <h2>待附加上下文</h2>
-                <p className="context-subtitle">文件、目录树与 Diff 会一起发送</p>
+                <p className="context-subtitle">把 GitHub 资料整理成一份可控的提示词</p>
               </div>
               <span className="count-badge">{contextState.stats.itemCount} items</span>
             </div>
-            {selectedItems.length === 0 ? (
-              <div className="context-empty">
-                <span className="empty-glyph">⌁</span>
-                <p>从上面的文件树选择源文件。</p>
-                <span>内容会在插入前以 Markdown 预览。</span>
-              </div>
-            ) : (
-              <>
-                <div className="selected-list">
-                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "pull_request" }> => item.type === "pull_request").map((pullRequest) => (
-                    <div className="selected-file selected-commit" key={`${pullRequest.repo}:${pullRequest.number}`}>
-                      <span className="file-type">PR</span>
-                      <span className="selected-file-name" title={`${pullRequest.repo}#${pullRequest.number}`}>#{pullRequest.number} · {pullRequest.title}</span>
-                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== pullRequest); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); }} aria-label="移除 Pull Request">×</button>
-                    </div>
-                  ))}
-                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "commit" }> => item.type === "commit").map((commit) => (
-                    <div className="selected-file selected-commit" key={`${commit.repo}:${commit.sha}`}>
-                      <span className="file-type">COMMIT</span>
-                      <span className="selected-file-name" title={`${commit.repo}/${commit.sha}`}>{commit.shortSha ?? commit.sha.slice(0, 7)} · {commit.message.split("\n")[0]}</span>
-                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== commit); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); }} aria-label="移除 Commit">×</button>
-                    </div>
-                  ))}
-                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "diff" }> => item.type === "diff").map((diff) => (
-                    <div className="selected-file selected-diff" key={`${diff.repo}:${diff.base}:${diff.head}`}>
-                      <span className="file-type">DIFF</span>
-                      <span className="selected-file-name" title={`${diff.repo}/${diff.base}...${diff.head}`}>{diff.base}...{diff.head} · {diff.files.length} files</span>
-                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== diff); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); }} aria-label="移除 Diff">×</button>
-                    </div>
-                  ))}
-                  {selectedItems.filter((item): item is Extract<ContextItem, { type: "tree" }> => item.type === "tree").map((tree) => (
-                    <div className="selected-file selected-tree" key={`${tree.repo}:${tree.ref}:${tree.sha}`}>
-                      <span className="file-type">TREE</span>
-                      <span className="selected-file-name" title={`${tree.repo}/${tree.ref}`}>仓库目录树 · {tree.entries.length} entries</span>
-                      <button className="remove-file" type="button" onClick={() => { const nextItems = selectedItemsRef.current.filter((item) => item !== tree); selectedItemsRef.current = nextItems; setSelectedItems(nextItems); setRepositoryTree(null); }} aria-label="移除仓库目录树">×</button>
-                    </div>
-                  ))}
-                  {selectedItems.filter((item): item is ContextFile => item.type === "file").map((file) => (
-                    <div className="selected-file" key={`${file.repo}:${file.ref}:${file.path}`}>
-                      <span className="file-type">{(file.language ?? "TXT").slice(0, 4).toUpperCase()}</span>
-                      <span className="selected-file-name" title={`${file.repo}/${file.path}`}>{file.path}</span>
-                      <button
-                        className="remove-file"
-                        type="button"
-                        onClick={() => {
-                          const nextItems = selectedItemsRef.current.filter((item) => item !== file);
-                          selectedItemsRef.current = nextItems;
-                          setSelectedItems(nextItems);
-                        }}
-                        aria-label={`移除 ${file.path}`}
-                      >×</button>
-                    </div>
-                  ))}
-                </div>
-                <div className="stats-row">
-                  <span>{contextState.stats.totalCharacters.toLocaleString()} source chars</span>
-                  <span>≈ {contextState.stats.estimatedCharacters.toLocaleString()} inserted chars</span>
-                </div>
-                {contextState.stats.warnings.map((warning) => <p className="warning-line" key={warning}>△ {warning}</p>)}
-                {contextState.error && <p className="warning-line error-line">! {contextState.error}</p>}
-                <details className="preview-details">
-                  <summary>查看 Markdown 预览</summary>
-                  <pre className="context-preview">{contextState.text || "无法生成预览。"}</pre>
-                </details>
-                <button
-                  className="primary-button full-width attach-button"
-                  type="button"
-                  disabled={!contextState.text || Boolean(contextState.error)}
-                  onClick={() => void attachContext()}
-                >
-                  附加到 DeepSeek <span>→</span>
-                </button>
-                <p className="manual-send-note">插入后请检查提示词，再由你手动发送。</p>
-              </>
-            )}
+            <ContextComposer
+              items={selectedItems}
+              stats={contextState.stats}
+              preview={contextState.text}
+              error={contextState.error}
+              onRemove={(item) => {
+                removeContextItem(item);
+                if (item.type === "tree") setRepositoryTree(null);
+              }}
+              onMove={moveContextItem}
+              onClear={() => {
+                clearContext();
+                setRepositoryTree(null);
+              }}
+              onAttach={() => void attachContext()}
+              attachDisabled={!contextState.text || Boolean(contextState.error)}
+            />
           </section>
         </>
       )}
 
       <footer className="app-footer">
-        <span>V0.1 · GitHub read-only</span>
+        <span>V0.4 · GitHub read-only</span>
         <span>没有自动发送或写操作</span>
       </footer>
     </main>
@@ -1020,6 +953,7 @@ function getContextStatsWithoutBuild(items: ContextItem[]) {
     fileCount: files.length,
     totalCharacters: files.reduce((total, file) => total + file.content.length, 0),
     estimatedCharacters: 0,
+    estimatedTokens: 0,
     warnings: [],
   };
 }

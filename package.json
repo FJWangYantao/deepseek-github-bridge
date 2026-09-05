@@ -1,6 +1,6 @@
 {
   "name": "deepseek-github-bridge",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "A read-only browser extension that attaches GitHub source context to DeepSeek conversations.",

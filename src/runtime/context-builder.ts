@@ -104,6 +104,7 @@ export interface ContextStats {
   fileCount: number;
   totalCharacters: number;
   estimatedCharacters: number;
+  estimatedTokens: number;
   warnings: string[];
 }
 
@@ -445,6 +446,7 @@ export function getContextStats(
     fileCount: files.length,
     totalCharacters,
     estimatedCharacters,
+    estimatedTokens: Math.ceil(estimatedCharacters / 4),
     warnings,
   };
 }

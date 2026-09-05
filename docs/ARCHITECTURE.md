@@ -1,4 +1,4 @@
-# DeepSeek GitHub Bridge — V0.1 架构
+# DeepSeek GitHub Bridge — V0.4 架构
 
 ## 数据流
 
@@ -33,6 +33,14 @@ Background Service Worker
 ### `src/runtime/`
 
 这里只保留跨模块的最小编排：类型化消息和上下文构建器。上下文构建是确定性的，负责将 `ContextItem`（文件或仓库树）渲染为 Markdown、动态 fence、数量/字符限制和二进制检测。当前没有模型驱动的工具循环。
+
+### `src/panel/hooks/useContextBasket.ts`
+
+Context Basket 是面板选择状态的单一拥有者。它同时维护 React state 和 ref：state 驱动渲染，ref 保证并发文件读取、移除、排序都基于最新篮子。Context Composer 只接收领域数据和回调，不直接了解 GitHub API。
+
+### `src/panel/components/ContextComposer.tsx`
+
+Context Composer 负责待附加上下文的呈现与人工确认：按用户顺序列出文件、目录树、Diff、Commit 和 PR，提供删除、上下移动、清空、Markdown 预览和 Token 预算。Token 目前按最终 Markdown 字符数除以 4 粗略估算，不能替代模型 tokenizer。
 
 ### V0.2 Context Explorer
 
