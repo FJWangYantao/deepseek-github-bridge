@@ -13,6 +13,7 @@ const file = (path: string): ContextFile => ({
   repo: "octo/demo",
   ref: "main",
   path,
+  sha: `sha-${path}`,
   language: "ts",
   content: path,
 });
@@ -70,7 +71,7 @@ describe("useContextBasket", () => {
     });
     expect(basket.current.items).toHaveLength(1);
     expect(basket.current.items[0]).toBe(updated);
-    expect(contextItemKey(basket.current.items[0])).toBe("file:octo/demo:main:src/one.ts");
+    expect(contextItemKey(basket.current.items[0])).toBe("file:octo/demo:main:src/one.ts:*");
 
     act(() => basket.current.clear());
     expect(basket.current.items).toEqual([]);

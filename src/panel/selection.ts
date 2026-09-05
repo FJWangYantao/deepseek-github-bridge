@@ -6,7 +6,7 @@ import {
 export function contextItemKey(item: ContextItem): string {
   switch (item.type) {
     case "file":
-      return `file:${item.repo}:${item.ref}:${item.path}`;
+      return `file:${item.repo}:${item.ref}:${item.path}:${item.startLine === undefined || item.endLine === undefined ? "*" : `${item.startLine}-${item.endLine}`}`;
     case "tree":
       return `tree:${item.repo}:${item.ref}`;
     case "diff":

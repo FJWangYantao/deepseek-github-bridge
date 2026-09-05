@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import { appendSelectedItem, appendSelectedFile, contextItemKey } from "../src/panel/selection";
 import type { ContextCommit, ContextDiff, ContextFile } from "../src/runtime/context-builder";
 
-const contextFile = (path: string): ContextFile => ({
+const contextFile = (path: string, range?: { startLine: number; endLine: number }): ContextFile => ({
   type: "file",
   source: { repo: "octo/demo", ref: "main" },
   repo: "octo/demo",
   ref: "main",
   path,
+  sha: `sha-${path}`,
   language: "ts",
+  ...(range ?? {}),
   content: `export const ${path.replace(/\W/g, "_")} = true;`,
 });
 
@@ -53,6 +55,13 @@ describe("appendSelectedFile", () => {
     const first = contextFile("src/first.ts");
 
     expect(appendSelectedFile([first], first)).toEqual([first]);
+  });
+
+  it("includes a file line range in its identity", () => {
+    const first = contextFile("src/app.ts", { startLine: 20, endLine: 45 });
+    const second = contextFile("src/app.ts", { startLine: 80, endLine: 110 });
+    expect(contextItemKey(first)).toBe("file:octo/demo:main:src/app.ts:20-45");
+    expect(appendSelectedItem([first], second)).toEqual([first, second]);
   });
 
   it("uses stable keys and deduplicates commits", () => {

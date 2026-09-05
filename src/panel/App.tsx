@@ -10,10 +10,12 @@ import {
   getContextStats,
   type ContextFile,
   type ContextItem,
+  type FileLineRange,
 } from "../runtime/context-builder";
 import { requestBridge } from "../runtime/messages";
 import { useContextBasket } from "./hooks/useContextBasket";
 import ContextComposer from "./components/ContextComposer";
+import FilePreview from "./components/FilePreview";
 import type {
   AuthStatus,
   Branch,
@@ -22,11 +24,17 @@ import type {
   RepositoryDiff,
   RepositoryPullRequest,
   DeepSeekStatus,
+  FileContent,
   Repository,
   TreeEntry,
 } from "../shared/types";
 
 const EMPTY_AUTH: AuthStatus = { authenticated: false, user: null };
+
+type PreviewFileState = {
+  entry: TreeEntry;
+  file: FileContent;
+};
 
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus>(EMPTY_AUTH);
@@ -38,6 +46,9 @@ export default function App() {
   const [branchName, setBranchName] = useState("");
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<TreeEntry[]>([]);
+  const [previewFile, setPreviewFile] = useState<PreviewFileState | null>(null);
+  const [previewRange, setPreviewRange] = useState<FileLineRange | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const {
     items: selectedItems,
     itemsRef: selectedItemsRef,
@@ -51,7 +62,6 @@ export default function App() {
   const [loadingRepositories, setLoadingRepositories] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [loadingDirectory, setLoadingDirectory] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<Set<string>>(() => new Set());
   const [repositoryTree, setRepositoryTree] = useState<ContextItem | null>(null);
   const [loadingTree, setLoadingTree] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,7 +80,6 @@ export default function App() {
   const [repositoryDiff, setRepositoryDiff] = useState<RepositoryDiff | null>(null);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [selectedDiffPaths, setSelectedDiffPaths] = useState<Set<string>>(() => new Set());
-  const pendingFilesRef = useRef<Map<string, symbol>>(new Map());
   const selectionVersionRef = useRef(0);
   const treeRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
@@ -197,8 +206,6 @@ export default function App() {
     setLoadingTree(false);
     setSearching(false);
     clearContext();
-    pendingFilesRef.current.clear();
-    setPendingFiles(new Set());
     setRepositoryTree(null);
     setSearchQuery("");
     setSearchResults([]);
@@ -296,8 +303,6 @@ export default function App() {
       setLoadingTree(false);
       setSearching(false);
       clearContext();
-      pendingFilesRef.current.clear();
-      setPendingFiles(new Set());
       setNotice("已断开 GitHub，扩展存储中的 Token 已清除。 ");
     } catch (disconnectError) {
       setError(errorMessage(disconnectError));
@@ -545,54 +550,50 @@ export default function App() {
       sha: result.sha,
       htmlUrl: result.htmlUrl,
     };
-    await toggleFile(entry);
+    await openFilePreview(entry);
   }
 
-  async function toggleFile(entry: TreeEntry) {
+  async function openFilePreview(entry: TreeEntry) {
     if (!selectedRepository || !branchName || entry.type !== "file") return;
-
-    const selectionKey = `${selectedRepository.fullName}:${branchName}:${entry.path}`;
-    const existing = selectedItemsRef.current.find(
-      (item) =>
-        item.type === "file" &&
-        item.repo === selectedRepository.fullName &&
-        item.ref === branchName &&
-        item.path === entry.path,
-    );
-    if (existing) {
-      removeContextItem(existing);
-      return;
-    }
-    if (pendingFilesRef.current.has(selectionKey)) return;
-
     const selectionVersion = selectionVersionRef.current;
-    const requestToken = Symbol(selectionKey);
-    pendingFilesRef.current.set(selectionKey, requestToken);
-    setPendingFiles(new Set(pendingFilesRef.current.keys()));
+    const previewRepository = selectedRepository;
+    const previewRef = branchName;
+    setLoadingPreview(true);
     setError("");
     try {
       const file = await requestBridge({
         type: "github:readFile",
-        payload: {
-          repo: selectedRepository,
-          path: entry.path,
-          ref: branchName,
-        },
+        payload: { repo: previewRepository, path: entry.path, ref: previewRef },
       });
-      if (selectionVersionRef.current !== selectionVersion) return;
-      const contextFile = contextFileFromGitHub(file);
-      // Use the ref as the authoritative latest selection. Each async response
-      // appends to the current value, instead of the render that started it.
-      addContextItem(contextFile);
-      setNotice(`已加载 ${entry.path}。`);
+      if (
+        selectionVersionRef.current !== selectionVersion ||
+        selectedRepository?.fullName !== previewRepository.fullName ||
+        branchName !== previewRef
+      ) return;
+      setPreviewFile({ entry, file });
+      setPreviewRange(null);
+    } catch (loadError) {
+      if (selectionVersionRef.current === selectionVersion) setError(errorMessage(loadError));
+    } finally {
+      if (selectionVersionRef.current === selectionVersion) setLoadingPreview(false);
+    }
+  }
+
+  function addPreviewToContext(range?: FileLineRange) {
+    if (!previewFile) return;
+    try {
+      const contextFile = contextFileFromGitHub(previewFile.file, range);
+      if (range) addContextItem(contextFile);
+      else addContextItem(contextFile);
+      setNotice(range ? `已加入 ${previewFile.file.path} 第 ${range.startLine}-${range.endLine} 行。` : `已加入 ${previewFile.file.path}。`);
     } catch (loadError) {
       setError(errorMessage(loadError));
-    } finally {
-      if (pendingFilesRef.current.get(selectionKey) === requestToken) {
-        pendingFilesRef.current.delete(selectionKey);
-        setPendingFiles(new Set(pendingFilesRef.current.keys()));
-      }
     }
+  }
+
+  async function toggleFile(entry: TreeEntry) {
+    if (!selectedRepository || !branchName || entry.type !== "file") return;
+    await openFilePreview(entry);
   }
 
   async function attachContext() {
@@ -852,6 +853,18 @@ export default function App() {
                   <span>{path || "根目录"}</span>
                   {path && <button className="text-button" type="button" onClick={() => setPath(parentPath(path))}>返回上级</button>}
                 </div>
+                {loadingPreview && <div className="empty-state"><span className="loader" />读取文件预览…</div>}
+                {previewFile && !loadingPreview && (
+                  <FilePreview
+                    entry={previewFile.entry}
+                    file={previewFile.file}
+                    range={previewRange}
+                    onRangeChange={setPreviewRange}
+                    onAddRange={(range) => addPreviewToContext(range)}
+                    onAddEntire={() => addPreviewToContext()}
+                    onClose={() => { setPreviewFile(null); setPreviewRange(null); }}
+                  />
+                )}
                 <div className="file-tree" aria-live="polite">
                   {loadingDirectory ? (
                     <div className="empty-state"><span className="loader" />读取目录…</div>
@@ -866,9 +879,7 @@ export default function App() {
                           item.ref === branchName &&
                           item.path === entry.path,
                       );
-                      const isPending = pendingFiles.has(
-                        `${selectedRepository.fullName}:${branchName}:${entry.path}`,
-                      );
+                      const isPending = false;
                       const isDirectory = entry.type === "dir";
                       const isSelectable = entry.type === "file";
                       return (
@@ -876,13 +887,13 @@ export default function App() {
                           className={`tree-row ${isSelected ? "is-selected" : ""} ${!isSelectable ? "is-directory" : ""}`}
                           type="button"
                           key={`${entry.type}:${entry.path}`}
-                          disabled={isPending}
+                          disabled={false}
                           onClick={() => {
                             if (isDirectory) setPath(entry.path);
                             else void toggleFile(entry);
                           }}
                         >
-                          <span className="tree-icon">{isDirectory ? "▸" : isSelected ? "✓" : isPending ? "…" : "·"}</span>
+                          <span className="tree-icon">{isDirectory ? "▸" : isSelected ? "✓" : loadingPreview && previewFile?.entry.path === entry.path ? "…" : "·"}</span>
                           <span className="tree-name">{entry.name}</span>
                           <span className="tree-meta">{isDirectory ? "DIR" : formatBytes(entry.size)}</span>
                         </button>
@@ -918,8 +929,6 @@ export default function App() {
               onMove={moveContextItem}
               onClear={() => {
                 selectionVersionRef.current += 1;
-                pendingFilesRef.current.clear();
-                setPendingFiles(new Set());
                 clearContext();
                 setRepositoryTree(null);
               }}

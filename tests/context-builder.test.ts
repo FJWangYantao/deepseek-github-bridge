@@ -16,6 +16,7 @@ const file = (overrides: Partial<ContextFile> = {}): ContextFile => ({
   repo: "octo/demo",
   ref: "main",
   path: "src/index.ts",
+  sha: "file-sha",
   language: "ts",
   content: "export const answer = 42;",
   ...overrides,
@@ -54,6 +55,13 @@ describe("buildContext", () => {
     expect(result.indexOf("File: `octo/demo/first.ts`")).toBeLessThan(result.indexOf("Context item: Git diff"));
     expect(result.indexOf("Context item: Git diff")).toBeLessThan(result.indexOf("Context item: Repository tree"));
     expect(result.indexOf("Context item: Repository tree")).toBeLessThan(result.indexOf("File: `octo/demo/last.ts`"));
+  });
+
+  it("renders file SHA and selected line metadata", () => {
+    const result = buildContext([file({ sha: "blob-123", startLine: 2, endLine: 3, content: "one\ntwo\nthree" })]);
+    expect(result).toContain("Blob SHA: `blob-123`");
+    expect(result).toContain("Lines: 2-3");
+    expect(result).toContain("two\nthree");
   });
 
   it("renders a repository tree alongside selected files", () => {

@@ -21,6 +21,9 @@ export interface ContextFile {
   repo: string;
   ref: string;
   path: string;
+  sha: string;
+  startLine?: number;
+  endLine?: number;
   language?: string;
   content: string;
 }
@@ -171,6 +174,10 @@ function renderFile(file: ContextFile): string {
     `Context item: File`,
     `File: \`${file.repo}/${file.path}\``,
     `Ref: \`${file.ref}\``,
+    `Blob SHA: \`${file.sha}\``,
+    ...(file.startLine === undefined || file.endLine === undefined
+      ? ["Selection: entire file"]
+      : [`Lines: ${file.startLine}-${file.endLine}`]),
     "",
     `${fence}${language ?? "text"}`,
     file.content,
@@ -306,7 +313,13 @@ function renderTree(tree: ContextTree): string {
   ].filter(Boolean).join("\n");
 }
 
-export function contextFileFromGitHub(file: FileContent): ContextFile {
+export interface FileLineRange {
+  startLine: number;
+  endLine: number;
+}
+
+export function contextFileFromGitHub(file: FileContent, range?: FileLineRange): ContextFile {
+  const selectedContent = range ? selectFileLines(file.content, range) : file.content;
   return {
     type: "file",
     source: {
@@ -316,9 +329,19 @@ export function contextFileFromGitHub(file: FileContent): ContextFile {
     repo: `${file.repo.owner}/${file.repo.name}`,
     ref: file.ref,
     path: file.path,
+    sha: file.sha,
+    ...(range ? { startLine: range.startLine, endLine: range.endLine } : {}),
     language: file.language,
-    content: file.content,
+    content: selectedContent,
   };
+}
+
+export function selectFileLines(content: string, range: FileLineRange): string {
+  const lines = content.split(/\r?\n/);
+  if (!Number.isInteger(range.startLine) || !Number.isInteger(range.endLine) || range.startLine < 1 || range.endLine < range.startLine || range.endLine > lines.length) {
+    throw new ContextBuildError("FILE_TOO_LARGE", `无效的文件行范围：${range.startLine}-${range.endLine}。`);
+  }
+  return lines.slice(range.startLine - 1, range.endLine).join("\n");
 }
 
 export function contextTreeFromGitHub(tree: RepositoryTree): ContextTree {
