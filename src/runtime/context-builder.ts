@@ -135,9 +135,6 @@ export function buildContext(
 
 function renderContext(items: ContextItem[]): string {
   const repositoryNames = [...new Set(items.map((item) => item.repo))];
-  const files = items.filter((item): item is ContextFile => item.type === "file");
-  const trees = items.filter((item): item is ContextTree => item.type === "tree");
-  const diffs = items.filter((item): item is ContextDiff => item.type === "diff");
   const header = [
     "## GitHub context",
     "",
@@ -147,17 +144,24 @@ function renderContext(items: ContextItem[]): string {
     "",
   ];
 
-  const commits = items.filter((item): item is ContextCommit => item.type === "commit");
-  const pullRequests = items.filter((item): item is ContextPullRequest => item.type === "pull_request");
-  const sections = [
-    ...pullRequests.map(renderPullRequest),
-    ...commits.map(renderCommit),
-    ...diffs.map(renderDiff),
-    ...trees.map(renderTree),
-    ...files.map(renderFile),
-  ];
+  const sections = items.map(renderContextItem);
 
   return [...header, sections.join("\n\n")].join("\n");
+}
+
+function renderContextItem(item: ContextItem): string {
+  switch (item.type) {
+    case "file":
+      return renderFile(item);
+    case "tree":
+      return renderTree(item);
+    case "diff":
+      return renderDiff(item);
+    case "commit":
+      return renderCommit(item);
+    case "pull_request":
+      return renderPullRequest(item);
+  }
 }
 
 function renderFile(file: ContextFile): string {

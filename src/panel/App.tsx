@@ -42,6 +42,7 @@ export default function App() {
     items: selectedItems,
     itemsRef: selectedItemsRef,
     addItem: addContextItem,
+    upsertItem: upsertContextItem,
     removeItem: removeContextItem,
     moveItem: moveContextItem,
     clear: clearContext,
@@ -454,7 +455,7 @@ export default function App() {
       return;
     }
     const contextPullRequest = contextPullRequestFromGitHub({ ...repositoryPullRequest, files: selectedFiles });
-    addContextItem(contextPullRequest);
+    upsertContextItem(contextPullRequest);
     setNotice(`已加入 ${selectedFiles.length} 个 Pull Request 文件。`);
   }
 
@@ -475,7 +476,7 @@ export default function App() {
       return;
     }
     const contextCommit = contextCommitFromGitHub({ ...repositoryCommit, files: selectedFiles });
-    addContextItem(contextCommit);
+    upsertContextItem(contextCommit);
     setNotice(`已加入 ${selectedFiles.length} 个 Commit 文件。`);
   }
 
@@ -497,7 +498,7 @@ export default function App() {
     }
     const nextDiff = { ...repositoryDiff, files: selectedFiles };
     const contextDiff = contextDiffFromGitHub(nextDiff);
-    addContextItem(contextDiff);
+    upsertContextItem(contextDiff);
     setNotice(`已加入 ${selectedFiles.length} 个 Diff 文件。`);
   }
 
@@ -916,6 +917,9 @@ export default function App() {
               }}
               onMove={moveContextItem}
               onClear={() => {
+                selectionVersionRef.current += 1;
+                pendingFilesRef.current.clear();
+                setPendingFiles(new Set());
                 clearContext();
                 setRepositoryTree(null);
               }}

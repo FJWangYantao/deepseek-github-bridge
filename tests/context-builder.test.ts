@@ -40,6 +40,22 @@ describe("buildContext", () => {
     expect(result).toContain("````ts");
   });
 
+  it("preserves basket order in the rendered Markdown", () => {
+    const tree = contextTreeFromGitHub({
+      repo: { owner: "octo", name: "demo" }, ref: "main", sha: "tree-sha", truncated: false,
+      entries: [{ path: "src/app.ts", mode: "100644", type: "blob", sha: "file-sha" }],
+    });
+    const diff = contextDiffFromGitHub({
+      repo: { owner: "octo", name: "demo" }, base: "main", head: "feature", status: "ahead",
+      aheadBy: 1, behindBy: 0, totalCommits: 1,
+      files: [{ path: "src/app.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "+new" }],
+    });
+    const result = buildContext([file({ path: "first.ts" }), diff, tree, file({ path: "last.ts" })]);
+    expect(result.indexOf("File: `octo/demo/first.ts`")).toBeLessThan(result.indexOf("Context item: Git diff"));
+    expect(result.indexOf("Context item: Git diff")).toBeLessThan(result.indexOf("Context item: Repository tree"));
+    expect(result.indexOf("Context item: Repository tree")).toBeLessThan(result.indexOf("File: `octo/demo/last.ts`"));
+  });
+
   it("renders a repository tree alongside selected files", () => {
     const tree = contextTreeFromGitHub({
       repo: { owner: "octo", name: "demo" },

@@ -25,6 +25,16 @@ export function useContextBasket() {
     return nextItems;
   }, [replaceItems]);
 
+  const upsertItem = useCallback((item: ContextItem) => {
+    const key = contextItemKey(item);
+    const existingIndex = itemsRef.current.findIndex((current) => contextItemKey(current) === key);
+    if (existingIndex < 0) return addItem(item);
+    const nextItems = [...itemsRef.current];
+    nextItems[existingIndex] = item;
+    replaceItems(nextItems);
+    return nextItems;
+  }, [addItem, replaceItems]);
+
   const removeItem = useCallback((item: ContextItem) => {
     const key = contextItemKey(item);
     replaceItems(itemsRef.current.filter((current) => contextItemKey(current) !== key));
@@ -47,6 +57,7 @@ export function useContextBasket() {
     items,
     itemsRef,
     addItem,
+    upsertItem,
     removeItem,
     moveItem,
     replaceItems,
